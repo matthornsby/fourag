@@ -1,5 +1,5 @@
 -- Users table (extends Supabase auth.users)
-create table public.users (
+create table if not exists public.users (
   id uuid primary key references auth.users (id) on delete cascade,
   username text unique not null,
   avatar_url text,
@@ -8,10 +8,13 @@ create table public.users (
 );
 
 -- Location privacy enum
-create type public.location_privacy as enum ('public', 'approximate', 'private');
+do $$ begin
+  create type public.location_privacy as enum ('public', 'approximate', 'private');
+exception when duplicate_object then null;
+end $$;
 
 -- Finds table
-create table public.finds (
+create table if not exists public.finds (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.users (id) on delete cascade,
   found_at timestamptz not null,
@@ -24,7 +27,7 @@ create table public.finds (
 );
 
 -- Clovers table
-create table public.clovers (
+create table if not exists public.clovers (
   id uuid primary key default gen_random_uuid(),
   find_id uuid not null references public.finds (id) on delete cascade,
   leaf_count integer not null check (leaf_count >= 4),
@@ -34,9 +37,9 @@ create table public.clovers (
 );
 
 -- Indexes
-create index finds_user_id_idx on public.finds (user_id);
-create index finds_found_at_idx on public.finds (found_at desc);
-create index clovers_find_id_idx on public.clovers (find_id);
+create index if not exists finds_user_id_idx on public.finds (user_id);
+create index if not exists finds_found_at_idx on public.finds (found_at desc);
+create index if not exists clovers_find_id_idx on public.clovers (find_id);
 
 -- Row Level Security
 alter table public.users enable row level security;
@@ -44,34 +47,34 @@ alter table public.finds enable row level security;
 alter table public.clovers enable row level security;
 
 -- Users policies
-create policy "Public profiles are viewable by everyone"
+create policy if not exists "Public profiles are viewable by everyone"
   on public.users for select using (true);
 
-create policy "Users can insert their own profile"
+create policy if not exists "Users can insert their own profile"
   on public.users for insert with check (auth.uid() = id);
 
-create policy "Users can update their own profile"
+create policy if not exists "Users can update their own profile"
   on public.users for update using (auth.uid() = id);
 
 -- Finds policies
-create policy "Public and approximate finds are viewable by everyone"
+create policy if not exists "Public and approximate finds are viewable by everyone"
   on public.finds for select
   using (location_privacy in ('public', 'approximate') or auth.uid() = user_id);
 
-create policy "Authenticated users can create finds"
+create policy if not exists "Authenticated users can create finds"
   on public.finds for insert
   with check (auth.uid() = user_id);
 
-create policy "Users can update their own finds"
+create policy if not exists "Users can update their own finds"
   on public.finds for update
   using (auth.uid() = user_id);
 
-create policy "Users can delete their own finds"
+create policy if not exists "Users can delete their own finds"
   on public.finds for delete
   using (auth.uid() = user_id);
 
 -- Clovers policies (inherit visibility from parent find)
-create policy "Clovers are viewable if their find is viewable"
+create policy if not exists "Clovers are viewable if their find is viewable"
   on public.clovers for select
   using (
     exists (
@@ -81,7 +84,7 @@ create policy "Clovers are viewable if their find is viewable"
     )
   );
 
-create policy "Users can insert clovers on their own finds"
+create policy if not exists "Users can insert clovers on their own finds"
   on public.clovers for insert
   with check (
     exists (
@@ -91,7 +94,7 @@ create policy "Users can insert clovers on their own finds"
     )
   );
 
-create policy "Users can update clovers on their own finds"
+create policy if not exists "Users can update clovers on their own finds"
   on public.clovers for update
   using (
     exists (
@@ -101,7 +104,7 @@ create policy "Users can update clovers on their own finds"
     )
   );
 
-create policy "Users can delete clovers on their own finds"
+create policy if not exists "Users can delete clovers on their own finds"
   on public.clovers for delete
   using (
     exists (
