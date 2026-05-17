@@ -1,0 +1,31 @@
+export type LocationPrivacy = "public" | "approximate" | "private";
+
+export interface Find {
+  id: string;
+  user_id: string;
+  found_at: string;
+  photo_url: string;
+  lat: number | null;
+  lng: number | null;
+  location_privacy: LocationPrivacy;
+  notes: string | null;
+  created_at: string;
+  clovers?: Clover[];
+}
+
+export interface Clover {
+  id: string;
+  find_id: string;
+  leaf_count: number;
+  annotation_x: number | null;
+  annotation_y: number | null;
+  annotation_radius: number | null;
+}
+
+export interface UserProfile {
+  id: string;
+  username: string;
+  avatar_url: string | null;
+  bio: string | null;
+  created_at: string;
+}
