@@ -33,7 +33,7 @@ export default async function Home() {
             </div>
             <Link
               href="/account/finds/new"
-              className="shrink-0 inline-flex items-center rounded-md bg-accent text-white text-sm font-medium px-4 py-2 hover:opacity-90 transition-opacity duration-150"
+              className="shrink-0 inline-flex items-center rounded-md bg-accent text-contrast text-sm font-medium px-4 py-2 hover:opacity-90 transition-opacity duration-150"
             >
               Log a find
             </Link>
@@ -79,7 +79,7 @@ export default async function Home() {
         </Link>
         <Link
           href="/auth/sign-up"
-          className="rounded-md bg-accent text-white text-sm font-medium px-4 py-2 hover:opacity-90 transition-opacity duration-150"
+          className="rounded-md bg-accent text-contrast text-sm font-medium px-4 py-2 hover:opacity-90 transition-opacity duration-150"
         >
           Get started
         </Link>

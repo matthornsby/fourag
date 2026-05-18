@@ -50,10 +50,10 @@ export function CloverFields({
             <span
               className={[
                 'flex items-center justify-center w-6 h-6 rounded-full text-xs font-semibold shrink-0',
-                isActive ? 'bg-accent text-white' : 'bg-border text-text-secondary',
+                isActive ? 'bg-accent text-contrast' : 'bg-border text-text-secondary',
               ].join(' ')}
             >
-              {index + 1}
+              {String.fromCharCode(65 + index)}
             </span>
 
             {/* Slider */}
@@ -76,10 +76,15 @@ export function CloverFields({
                 onChange={(e) => updateCount(index, parseInt(e.target.value, 10))}
                 onClick={(e) => e.stopPropagation()}
                 className="w-full accent-accent h-1.5 cursor-pointer"
-                aria-label={`Leaf count for clover ${index + 1}`}
+                aria-label={`Leaf count for clover ${String.fromCharCode(65 + index)}`}
               />
               <div className="flex justify-between text-xs text-text-secondary select-none">
                 <span>4</span>
+                {hasPhoto && isActive && (
+                  <span className="text-xs text-text-secondary">
+                    Slide to change leaf count
+                  </span>
+                )}
                 <span>10</span>
               </div>
             </div>

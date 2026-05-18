@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase-server";
 import type { Find, Clover } from "@/types";
+import { CloverMarker } from "@/components/clover-marker";
+import { markerRotation } from "@/lib/marker-rotation";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -78,35 +80,32 @@ export default async function FindPage({ params }: PageProps) {
           ← All finds
         </Link>
 
-        {/* Photo with annotation dots */}
-        {/*
-          w-fit shrinks the container to the image's rendered width — this is the
-          reliable way to keep `left/top` percentages anchored to the image rather
-          than to the viewport. overflow-hidden clips the rounded corners.
-        */}
-        <div className="relative w-fit self-center rounded-lg overflow-hidden border border-border">
+        {/* Photo with annotation markers */}
+        <div className="relative w-full rounded-lg overflow-hidden border border-border">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={typedFind.photo_url}
             alt="Clover find"
-            className="block max-h-[60vh] max-w-full w-auto h-auto"
+            className="w-full h-auto block"
           />
           {typedFind.clovers.map((clover, i) =>
             clover.annotation_x !== null && clover.annotation_y !== null ? (
               <div
                 key={clover.id}
-                className="absolute flex items-center justify-center -translate-x-1/2 -translate-y-1/2 rounded-full text-white font-semibold shadow-[0_0_0_2px_white,0_1px_4px_rgba(0,0,0,0.3)]"
+                className="absolute select-none pointer-events-none"
                 style={{
                   left: `${clover.annotation_x * 100}%`,
                   top: `${clover.annotation_y * 100}%`,
-                  width: 28,
-                  height: 28,
-                  fontSize: 11,
-                  lineHeight: 1,
-                  backgroundColor: "var(--color-accent)",
+                  width: '18%',
+                  aspectRatio: '1',
+                  filter: 'drop-shadow(0 1px 6px rgba(0,0,0,0.5))',
+                  transform: `translate(-50%, -50%) rotate(0deg)`,
                 }}
               >
-                {i + 1}
+                <CloverMarker
+                  leafCount={clover.leaf_count}
+                  rotation={markerRotation(typedFind.id, i)}
+                />
               </div>
             ) : null
           )}
@@ -124,7 +123,7 @@ export default async function FindPage({ params }: PageProps) {
             <ul className="flex flex-col gap-1">
               {typedFind.clovers.map((clover, i) => (
                 <li key={clover.id} className="text-sm text-text-primary">
-                  Clover {i + 1} · {clover.leaf_count} leaves
+                  Clover {String.fromCharCode(65 + i)} · {clover.leaf_count} leaves
                 </li>
               ))}
             </ul>

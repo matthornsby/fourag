@@ -123,6 +123,8 @@ export function EditFindForm({ find }: EditFindFormProps) {
         <PhotoUpload
           onChange={handlePhotoChange}
           annotations={annotations}
+          leafCounts={leafCounts}
+          markerSeed={find.id}
           activeCloverIndex={activeCloverIndex}
           onAnnotate={handleAnnotate}
           initialPhotoUrl={find.photo_url}
@@ -242,7 +244,7 @@ export function EditFindForm({ find }: EditFindFormProps) {
       <button
         type="submit"
         disabled={isPending}
-        className="w-full rounded-md bg-accent text-white text-sm font-medium px-4 py-2.5 hover:opacity-90 transition-opacity duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full rounded-md bg-accent text-contrast text-sm font-medium px-4 py-2.5 hover:opacity-90 transition-opacity duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {isPending ? 'Saving…' : 'Save changes'}
       </button>

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { Lock } from "lucide-react";
 import type { Find, Clover } from "@/types";
+import { CloverMarker } from "@/components/clover-marker";
+import { markerRotation } from "@/lib/marker-rotation";
 
 interface FindCardProps {
   find: Find & { clovers: Clover[] };
@@ -32,14 +34,35 @@ export function FindCard({ find }: FindCardProps) {
       href={`/finds/${find.id}`}
       className="block border border-border rounded-lg overflow-hidden hover:border-accent transition-colors duration-150"
     >
-      {/* Photo */}
-      <div className="bg-background flex justify-center">
+      {/* Photo with annotation markers */}
+      <div className="relative bg-background">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={find.photo_url}
           alt={summary || "Clover find"}
-          className="max-h-[60vh] w-auto object-contain"
+          className="w-full h-auto block"
         />
+        {find.clovers.map((clover, i) =>
+          clover.annotation_x !== null && clover.annotation_y !== null ? (
+            <div
+              key={clover.id}
+              className="absolute select-none pointer-events-none"
+              style={{
+                left: `${clover.annotation_x * 100}%`,
+                top: `${clover.annotation_y * 100}%`,
+                width: '18%',
+                aspectRatio: '1',
+                filter: 'drop-shadow(0 1px 6px rgba(0,0,0,0.5))',
+                transform: 'translate(-50%, -50%)',
+              }}
+            >
+              <CloverMarker
+                leafCount={clover.leaf_count}
+                rotation={markerRotation(find.id, i)}
+              />
+            </div>
+          ) : null
+        )}
       </div>
 
       {/* Info area */}
