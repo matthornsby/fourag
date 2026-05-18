@@ -1,3 +1,8 @@
+# Fourag
+Functionally, Fourag is an application to track four-leaf (more-leaf) clovers, but it's primarily intended to let me experiment with modern agentic design and development tools.
+
+-----
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started

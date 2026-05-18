@@ -47,34 +47,42 @@ alter table public.finds enable row level security;
 alter table public.clovers enable row level security;
 
 -- Users policies
-create policy if not exists "Public profiles are viewable by everyone"
+drop policy if exists "Public profiles are viewable by everyone" on public.users;
+create policy "Public profiles are viewable by everyone"
   on public.users for select using (true);
 
-create policy if not exists "Users can insert their own profile"
+drop policy if exists "Users can insert their own profile" on public.users;
+create policy "Users can insert their own profile"
   on public.users for insert with check (auth.uid() = id);
 
-create policy if not exists "Users can update their own profile"
+drop policy if exists "Users can update their own profile" on public.users;
+create policy "Users can update their own profile"
   on public.users for update using (auth.uid() = id);
 
 -- Finds policies
-create policy if not exists "Public and approximate finds are viewable by everyone"
+drop policy if exists "Public and approximate finds are viewable by everyone" on public.finds;
+create policy "Public and approximate finds are viewable by everyone"
   on public.finds for select
   using (location_privacy in ('public', 'approximate') or auth.uid() = user_id);
 
-create policy if not exists "Authenticated users can create finds"
+drop policy if exists "Authenticated users can create finds" on public.finds;
+create policy "Authenticated users can create finds"
   on public.finds for insert
   with check (auth.uid() = user_id);
 
-create policy if not exists "Users can update their own finds"
+drop policy if exists "Users can update their own finds" on public.finds;
+create policy "Users can update their own finds"
   on public.finds for update
   using (auth.uid() = user_id);
 
-create policy if not exists "Users can delete their own finds"
+drop policy if exists "Users can delete their own finds" on public.finds;
+create policy "Users can delete their own finds"
   on public.finds for delete
   using (auth.uid() = user_id);
 
 -- Clovers policies (inherit visibility from parent find)
-create policy if not exists "Clovers are viewable if their find is viewable"
+drop policy if exists "Clovers are viewable if their find is viewable" on public.clovers;
+create policy "Clovers are viewable if their find is viewable"
   on public.clovers for select
   using (
     exists (
@@ -84,7 +92,8 @@ create policy if not exists "Clovers are viewable if their find is viewable"
     )
   );
 
-create policy if not exists "Users can insert clovers on their own finds"
+drop policy if exists "Users can insert clovers on their own finds" on public.clovers;
+create policy "Users can insert clovers on their own finds"
   on public.clovers for insert
   with check (
     exists (
@@ -94,7 +103,8 @@ create policy if not exists "Users can insert clovers on their own finds"
     )
   );
 
-create policy if not exists "Users can update clovers on their own finds"
+drop policy if exists "Users can update clovers on their own finds" on public.clovers;
+create policy "Users can update clovers on their own finds"
   on public.clovers for update
   using (
     exists (
@@ -104,7 +114,8 @@ create policy if not exists "Users can update clovers on their own finds"
     )
   );
 
-create policy if not exists "Users can delete clovers on their own finds"
+drop policy if exists "Users can delete clovers on their own finds" on public.clovers;
+create policy "Users can delete clovers on their own finds"
   on public.clovers for delete
   using (
     exists (
