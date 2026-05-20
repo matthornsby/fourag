@@ -1,11 +1,20 @@
 import Link from "next/link";
-import { Lock } from "lucide-react";
+import { Lock, MapPin } from "lucide-react";
 import type { Find, Clover } from "@/types";
 import { CloverMarker } from "@/components/clover-marker";
 import { markerRotation } from "@/lib/marker-rotation";
+import { cloverPath } from "@/lib/clover-path";
 
 interface FindCardProps {
   find: Find & { clovers: Clover[] };
+}
+
+function groupLeafCounts(clovers: Clover[]): { count: number; num: number }[] {
+  const freq = new Map<number, number>()
+  for (const c of clovers) freq.set(c.leaf_count, (freq.get(c.leaf_count) ?? 0) + 1)
+  return Array.from(freq.entries())
+    .sort((a, b) => b[0] - a[0])
+    .map(([count, num]) => ({ count, num }))
 }
 
 function formatDate(dateString: string): string {
@@ -28,11 +37,13 @@ function cloverSummary(clovers: Clover[]): string {
 export function FindCard({ find }: FindCardProps) {
   const summary = cloverSummary(find.clovers);
   const privacy = find.location_privacy;
+  const hasLocation = find.lat !== null && find.lng !== null && privacy !== "private";
+  const leafGroups = groupLeafCounts(find.clovers);
 
   return (
     <Link
       href={`/finds/${find.id}`}
-      className="block border border-border rounded-lg overflow-hidden hover:border-accent transition-colors duration-150"
+      className="block border border-border rounded-lg overflow-hidden hover:border-accent transition-colors duration-150 max-w-[400px]"
     >
       {/* Photo with annotation markers */}
       <div className="relative bg-background">
@@ -62,6 +73,30 @@ export function FindCard({ find }: FindCardProps) {
               />
             </div>
           ) : null
+        )}
+
+        {/* Metadata overlay */}
+        {(leafGroups.length > 0 || hasLocation) && (
+          <div
+            className="absolute bottom-2 left-2 flex items-center gap-2 px-2 py-1 rounded-full"
+            style={{ background: 'linear-gradient(135deg, var(--color-accent), color-mix(in srgb, var(--color-accent) 70%, #003311))' }}
+          >
+            {leafGroups.map(({ count, num }, i) => (
+              <span key={i} className="flex items-center gap-1">
+                <svg width="16" height="16" viewBox="0 0 100 100" aria-hidden="true">
+                  <path d={cloverPath(count)} fill="#001831" />
+                </svg>
+                {num > 1 && (
+                  <span className="text-xs font-semibold" style={{ color: '#001831' }}>
+                    ×{num}
+                  </span>
+                )}
+              </span>
+            ))}
+            {hasLocation && (
+              <MapPin size={14} strokeWidth={2} style={{ color: '#001831' }} />
+            )}
+          </div>
         )}
       </div>
 
