@@ -20,6 +20,37 @@ function contentArea(naturalRatio: number) {
   }
 }
 
+function resizeImage(file: File, maxDimension = 1920, quality = 0.85): Promise<File> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      const { naturalWidth: w, naturalHeight: h } = img
+      const scale = Math.min(1, maxDimension / Math.max(w, h))
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.round(w * scale)
+      canvas.height = Math.round(h * scale)
+      const ctx = canvas.getContext('2d')
+      if (!ctx) { reject(new Error('canvas context unavailable')); return }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) { reject(new Error('toBlob failed')); return }
+          const name = file.name.replace(/\.[^.]+$/, '.jpg')
+          resolve(new File([blob], name, { type: 'image/jpeg' }))
+        },
+        'image/jpeg',
+        quality,
+      )
+    }
+
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image load failed')) }
+    img.src = url
+  })
+}
+
 interface ExifData {
   lat?: number
   lng?: number
@@ -79,7 +110,14 @@ export function PhotoUpload({
       // EXIF extraction failed — proceed without it
     }
 
-    onChange(file, exifData)
+    let uploadFile = file
+    try {
+      uploadFile = await resizeImage(file)
+    } catch {
+      // resize failed — upload original
+    }
+
+    onChange(uploadFile, exifData)
   }
 
   function handleImgLoad() {
