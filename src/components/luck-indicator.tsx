@@ -1,16 +1,11 @@
 "use client";
 
 import { Leaf } from "lucide-react";
+import type { Find, Clover } from "@/types";
+import { computeLuck } from "@/lib/luck";
 
 interface LuckIndicatorProps {
-  lastFindAt: string | null;
-}
-
-function computeLuck(lastFindAt: string): number {
-  const daysSince =
-    (Date.now() - new Date(lastFindAt).getTime()) / 86400000;
-  const luck = Math.round(100 * Math.exp(-daysSince / 12));
-  return Math.max(0, Math.min(100, luck));
+  finds: (Find & { clovers: Clover[] })[];
 }
 
 type LuckState = "healthy" | "fading" | "bare";
@@ -27,8 +22,8 @@ const stateStyles: Record<LuckState, { color: string }> = {
   bare: { color: "var(--color-text-secondary)" },
 };
 
-export function LuckIndicator({ lastFindAt }: LuckIndicatorProps) {
-  if (!lastFindAt) {
+export function LuckIndicator({ finds }: LuckIndicatorProps) {
+  if (finds.length === 0 || finds.every(f => f.clovers.length === 0)) {
     return (
       <span className="inline-flex items-center gap-1.5 bg-surface border border-border rounded-full px-3 py-1 text-sm text-text-secondary">
         <Leaf size={14} strokeWidth={1.5} />
@@ -37,7 +32,7 @@ export function LuckIndicator({ lastFindAt }: LuckIndicatorProps) {
     );
   }
 
-  const score = computeLuck(lastFindAt);
+  const score = Math.round(computeLuck(finds, new Date()));
   const state = getLuckState(score);
   const { color } = stateStyles[state];
 

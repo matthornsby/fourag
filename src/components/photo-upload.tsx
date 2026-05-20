@@ -67,7 +67,7 @@ export function PhotoUpload({
 
     let exifData: ExifData | null = null
     try {
-      const exif = await exifr.parse(file, { gps: true, pick: ['DateTimeOriginal'] })
+      const exif = await exifr.parse(file, { gps: true })
       if (exif) {
         exifData = {
           lat: exif.latitude ?? undefined,

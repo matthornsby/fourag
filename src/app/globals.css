@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 @theme {
-  --color-background: #001021;
+  --color-background: #001831;
   --color-surface: rgba(0,0,0,.2);
   --color-border: rgba(0,0,0,.3);
   --color-text-primary: #ffffff;
@@ -9,6 +9,7 @@
   --color-accent: #BAFF46;
   --color-accent-light: rgba(0,0,0,.1);
   --color-error: #B91C1C;
+  --color-text-contrast: var(--color-text-primary);
 }
 
 body {
@@ -19,7 +20,8 @@ body {
 .text-contrast{
  color: contrast-color(var(--color-background));
 
- &.bg-accent{
+ &.bg-accent, 
+ &:is(.bg-accent *){
   color: contrast-color(var(--color-accent));
  }
 }
