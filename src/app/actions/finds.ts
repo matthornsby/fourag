@@ -24,6 +24,7 @@ export async function createFind(formData: FormData): Promise<{ error: string } 
   const lat = formData.get('lat') as string | null
   const lng = formData.get('lng') as string | null
   const locationPrivacy = (formData.get('location_privacy') as string) || 'public'
+  const locationName = formData.get('location_name') as string | null
   const notes = formData.get('notes') as string | null
   const leafCountsRaw = formData.get('leaf_counts') as string
 
@@ -65,6 +66,7 @@ export async function createFind(formData: FormData): Promise<{ error: string } 
       lat: lat ? parseFloat(lat) : null,
       lng: lng ? parseFloat(lng) : null,
       location_privacy: locationPrivacy,
+      location_name: locationName || null,
       notes: notes || null,
     })
     .select('id')
@@ -124,6 +126,7 @@ export async function updateFind(findId: string, formData: FormData): Promise<{ 
   const lat = formData.get('lat') as string | null
   const lng = formData.get('lng') as string | null
   const locationPrivacy = (formData.get('location_privacy') as string) || 'public'
+  const locationName = formData.get('location_name') as string | null
   const notes = formData.get('notes') as string | null
   const leafCountsRaw = formData.get('leaf_counts') as string
 
@@ -179,6 +182,7 @@ export async function updateFind(findId: string, formData: FormData): Promise<{ 
       lat: lat ? parseFloat(lat) : null,
       lng: lng ? parseFloat(lng) : null,
       location_privacy: locationPrivacy,
+      location_name: locationName || null,
       notes: notes || null,
     })
     .eq('id', findId)
@@ -211,4 +215,47 @@ export async function updateFind(findId: string, formData: FormData): Promise<{ 
   }
 
   redirect(`/finds/${findId}`)
+}
+
+export async function deleteFind(findId: string): Promise<{ error: string } | never> {
+  const supabase = await createClient()
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) {
+    return { error: 'You must be signed in to delete a find.' }
+  }
+
+  const { data: existingFind, error: fetchError } = await supabase
+    .from('finds')
+    .select('id, user_id, photo_url')
+    .eq('id', findId)
+    .single()
+
+  if (fetchError || !existingFind) {
+    return { error: 'Find not found.' }
+  }
+
+  if (existingFind.user_id !== user.id) {
+    return { error: 'You do not have permission to delete this find.' }
+  }
+
+  const { error: deleteError } = await supabase
+    .from('finds')
+    .delete()
+    .eq('id', findId)
+
+  if (deleteError) {
+    return { error: `Couldn't delete find — ${deleteError.message}` }
+  }
+
+  try {
+    const oldPathEncoded = existingFind.photo_url.split('/finds/')[1]
+    if (oldPathEncoded) {
+      await supabase.storage.from('finds').remove([decodeURIComponent(oldPathEncoded)])
+    }
+  } catch {
+    // Non-fatal: row is already deleted
+  }
+
+  redirect('/')
 }

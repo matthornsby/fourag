@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase-server'
-import { EditFindForm } from '@/components/edit-find-form'
+import { FindForm } from '@/components/find-form'
 import type { Find, Clover } from '@/types'
 
 interface PageProps {
@@ -34,7 +34,7 @@ export default async function EditFindPage({ params }: PageProps) {
     <main className="flex-1">
       <div className="max-w-[680px] mx-auto px-4 sm:px-6 py-8">
         <h1 className="text-2xl font-semibold mb-8">Edit find</h1>
-        <EditFindForm find={typedFind} />
+        <FindForm find={typedFind} />
       </div>
     </main>
   )

@@ -51,6 +51,7 @@ export function FindCard({ find }: FindCardProps) {
         <img
           src={find.photo_url}
           alt={summary || "Clover find"}
+          loading="lazy"
           className="w-full h-auto block"
         />
         {find.clovers.map((clover, i) =>
@@ -78,54 +79,36 @@ export function FindCard({ find }: FindCardProps) {
         {/* Metadata overlay */}
         {(leafGroups.length > 0 || hasLocation) && (
           <div
-            className="absolute bottom-2 left-2 flex items-center gap-2 px-2 py-1 rounded-full"
-            style={{ background: 'linear-gradient(135deg, var(--color-accent), color-mix(in srgb, var(--color-accent) 70%, #003311))' }}
+            className="absolute bottom-0 left-0 flex flex-col items-start justify-end-safe gap-2 px-2 py-2 aspect-video min-w-60 font-semibold"
+            style={{ background: 'linear-gradient(12.5deg, color-mix(in srgb, var(--color-background) 80%, rgba(0,0,0,0)), transparent 75%, transparent)', fontSize: ".85rem"}}
           >
+            <span className="flex gap-2">
             {leafGroups.map(({ count, num }, i) => (
-              <span key={i} className="flex items-center gap-1">
-                <svg width="16" height="16" viewBox="0 0 100 100" aria-hidden="true">
-                  <path d={cloverPath(count)} fill="#001831" />
+              <span key={i} className="flex items-center">
+                <svg width="1em" height="1em" viewBox="0 0 100 100" aria-hidden="true" className="fill-current">
+                  <path d={cloverPath(count)}/>
                 </svg>
                 {num > 1 && (
-                  <span className="text-xs font-semibold" style={{ color: '#001831' }}>
+                  <span className="" >
                     ×{num}
                   </span>
                 )}
               </span>
             ))}
+            </span>
             {hasLocation && (
-              <MapPin size={14} strokeWidth={2} style={{ color: '#001831' }} />
+              <span className="flex items-center gap-1">
+                <MapPin size={16} strokeWidth={2} className="fill-current shrink-0" />
+                {find.location_name && (
+                  <span className="truncate">{find.location_name}</span>
+                )}
+              </span>
             )}
           </div>
         )}
       </div>
 
-      {/* Info area */}
-      <div className="bg-surface px-4 py-3 flex items-start justify-between gap-3">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-sm text-text-secondary">
-            {formatDate(find.found_at)}
-          </span>
-          {summary && (
-            <span className="text-sm font-medium text-text-primary">
-              {summary}
-            </span>
-          )}
-        </div>
-
-        {/* Location privacy badge */}
-        {privacy === "approximate" && (
-          <span className="shrink-0 text-xs text-text-secondary border border-border rounded px-1.5 py-0.5 mt-0.5">
-            ~location
-          </span>
-        )}
-        {privacy === "private" && (
-          <span className="shrink-0 flex items-center gap-1 text-xs text-text-secondary border border-border rounded px-1.5 py-0.5 mt-0.5">
-            <Lock size={12} strokeWidth={1.5} />
-            Private
-          </span>
-        )}
-      </div>
+      
     </Link>
   );
 }

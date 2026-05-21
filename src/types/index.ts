@@ -8,6 +8,7 @@ export interface Find {
   lat: number | null;
   lng: number | null;
   location_privacy: LocationPrivacy;
+  location_name: string | null;
   notes: string | null;
   created_at: string;
   clovers?: Clover[];

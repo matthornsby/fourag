@@ -139,7 +139,7 @@ export default async function FindPage({ params }: PageProps) {
           {/* Location */}
           {displayCoords && (
             <p className="text-sm text-text-secondary">
-              {displayCoords.lat.toFixed(5)}, {displayCoords.lng.toFixed(5)}
+              {typedFind.location_name ?? `${displayCoords.lat.toFixed(5)}, ${displayCoords.lng.toFixed(5)}`}
               {typedFind.location_privacy === "approximate" && (
                 <span className="ml-1">(approximate)</span>
               )}

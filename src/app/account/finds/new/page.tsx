@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase-server'
-import { NewFindForm } from '@/components/new-find-form'
+import { FindForm } from '@/components/find-form'
 
 export default async function NewFindPage() {
   const supabase = await createClient()
@@ -17,7 +17,7 @@ export default async function NewFindPage() {
         <p className="text-sm text-text-secondary mb-8">
           Record a clover you&apos;ve found — photo, date, and leaf count.
         </p>
-        <NewFindForm />
+        <FindForm />
       </div>
     </main>
   )
