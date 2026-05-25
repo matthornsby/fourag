@@ -35,6 +35,7 @@ export default async function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
+        <div id="wallpaper" aria-hidden="true" />
         <SiteHeader user={user ? { id: user.id } : null} />
         {children}
       </body>

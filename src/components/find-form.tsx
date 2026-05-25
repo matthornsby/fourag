@@ -5,11 +5,14 @@ import Link from 'next/link'
 import { PhotoUpload } from './photo-upload'
 import { CloverFields } from './clover-fields'
 import { createFind, updateFind, deleteFind } from '@/app/actions/finds'
+import { markerRotation } from '@/lib/marker-rotation'
 import type { Find, Clover } from '@/types'
 
 interface Annotation {
   x: number
   y: number
+  radius?: number
+  rotation?: number
 }
 
 function toDatetimeLocalValue(date: Date): string {
@@ -52,9 +55,14 @@ export function FindForm({ find }: FindFormProps) {
   )
   const [annotations, setAnnotations] = useState<(Annotation | null)[]>(
     find && find.clovers.length > 0
-      ? find.clovers.map((c) =>
+      ? find.clovers.map((c, i) =>
           c.annotation_x != null && c.annotation_y != null
-            ? { x: c.annotation_x, y: c.annotation_y }
+            ? {
+                x: c.annotation_x,
+                y: c.annotation_y,
+                radius: c.annotation_radius ?? undefined,
+                rotation: c.annotation_rotation ?? markerRotation(find.id, i),
+              }
             : null
         )
       : [null]
@@ -102,7 +110,27 @@ export function FindForm({ find }: FindFormProps) {
   function handleAnnotate(index: number, x: number, y: number) {
     setAnnotations((prev) => {
       const next = [...prev]
-      next[index] = { x, y }
+      next[index] = {
+        x, y,
+        radius: prev[index]?.radius,
+        rotation: prev[index]?.rotation ?? markerRotation(find?.id ?? 0, index),
+      }
+      return next
+    })
+  }
+
+  function handleRadiusChange(index: number, radius: number) {
+    setAnnotations((prev) => {
+      const next = [...prev]
+      if (next[index]) next[index] = { ...next[index]!, radius }
+      return next
+    })
+  }
+
+  function handleRotationChange(index: number, rotation: number) {
+    setAnnotations((prev) => {
+      const next = [...prev]
+      if (next[index]) next[index] = { ...next[index]!, rotation }
       return next
     })
   }
@@ -165,6 +193,9 @@ export function FindForm({ find }: FindFormProps) {
           markerSeed={find?.id}
           activeCloverIndex={activeCloverIndex}
           onAnnotate={handleAnnotate}
+          onRadiusChange={handleRadiusChange}
+          onRotationChange={handleRotationChange}
+          onActivate={setActiveCloverIndex}
           initialPhotoUrl={find?.photo_url}
         />
       </div>

@@ -21,6 +21,7 @@ export interface Clover {
   annotation_x: number | null;
   annotation_y: number | null;
   annotation_radius: number | null;
+  annotation_rotation: number | null;
 }
 
 export interface UserProfile {

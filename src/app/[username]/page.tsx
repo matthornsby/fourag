@@ -39,7 +39,7 @@ export default async function UserProfilePage({ params }: PageProps) {
 
   return (
     <main className="flex-1">
-      <div className="mx-auto max-w-[900px] px-4 sm:px-6 py-8 flex flex-col gap-6">
+      <div className="mx-auto max-w-(--width-main-max) px-4 sm:px-6 py-8 flex flex-col gap-6">
         <div className="flex flex-col gap-1">
           <h1 className="text-xl font-semibold text-text-primary">
             {pageHeading(typedProfile.username, isOwner)}
@@ -54,7 +54,7 @@ export default async function UserProfilePage({ params }: PageProps) {
             No {FINDS_TERM} yet.
           </p>
         ) : (
-          <FindsCalendar finds={typedFinds} />
+          <FindsCalendar finds={typedFinds} userId={user?.id} />
         )}
       </div>
     </main>

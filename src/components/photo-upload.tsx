@@ -60,6 +60,8 @@ interface ExifData {
 interface Annotation {
   x: number
   y: number
+  radius?: number
+  rotation?: number
 }
 
 interface PhotoUploadProps {
@@ -69,6 +71,9 @@ interface PhotoUploadProps {
   markerSeed?: string | number
   activeCloverIndex?: number
   onAnnotate?: (index: number, x: number, y: number) => void
+  onRadiusChange?: (index: number, radius: number) => void
+  onRotationChange?: (index: number, rotation: number) => void
+  onActivate?: (index: number) => void
   initialPhotoUrl?: string
 }
 
@@ -79,15 +84,54 @@ export function PhotoUpload({
   markerSeed = 0,
   activeCloverIndex = 0,
   onAnnotate,
+  onRadiusChange,
+  onRotationChange,
+  onActivate,
   initialPhotoUrl,
 }: PhotoUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const imgRef = useRef<HTMLImageElement>(null)
   const didDragRef = useRef(false)
+  const hasDragMovedRef = useRef(false)
+  const latestAnnotationsRef = useRef(annotations)
   const [preview, setPreview] = useState<string | null>(initialPhotoUrl ?? null)
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
+  const [resizingIndex, setResizingIndex] = useState<number | null>(null)
+  const [rotatingIndex, setRotatingIndex] = useState<number | null>(null)
+  const rotationDragRef = useRef<{ lastAngle: number; rotation: number } | null>(null)
   // Natural aspect ratio of the loaded image; drives letterbox offset calculations.
   const [naturalRatio, setNaturalRatio] = useState<number | null>(null)
+
+  useEffect(() => { latestAnnotationsRef.current = annotations }, [annotations])
+
+  function getRadiusFromPointer(clientX: number, clientY: number, index: number): number {
+    const ann = latestAnnotationsRef.current[index]
+    const el = imgRef.current
+    if (!ann || !el) return 0.09
+    const rect = el.getBoundingClientRect()
+    const ratio = naturalRatio ?? (el.naturalWidth > 0 ? el.naturalWidth / el.naturalHeight : null)
+    if (!ratio) return 0.09
+    const ca = contentArea(ratio)
+    const contentW = ca.width * rect.width
+    if (contentW === 0) return 0.09
+    const markerCX = rect.left + (ca.left + ann.x * ca.width) * rect.width
+    const markerCY = rect.top + (ca.top + ann.y * ca.height) * rect.height
+    const distPx = Math.sqrt((clientX - markerCX) ** 2 + (clientY - markerCY) ** 2)
+    return Math.max(0.05, Math.min(0.35, distPx / contentW))
+  }
+
+  function getAngleFromPointer(clientX: number, clientY: number, index: number): number {
+    const ann = latestAnnotationsRef.current[index]
+    const el = imgRef.current
+    if (!ann || !el) return 0
+    const rect = el.getBoundingClientRect()
+    const ratio = naturalRatio ?? (el.naturalWidth > 0 ? el.naturalWidth / el.naturalHeight : null)
+    if (!ratio) return 0
+    const ca = contentArea(ratio)
+    const markerCX = rect.left + (ca.left + ann.x * ca.width) * rect.width
+    const markerCY = rect.top + (ca.top + ann.y * ca.height) * rect.height
+    return Math.atan2(clientY - markerCY, clientX - markerCX) * 180 / Math.PI
+  }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -149,27 +193,46 @@ export function PhotoUpload({
 
   const handleGlobalMouseMove = useCallback(
     (e: MouseEvent) => {
-      if (draggingIndex === null || !onAnnotate) return
-      const pos = getNormalized(e.clientX, e.clientY)
-      if (pos) onAnnotate(draggingIndex, pos.x, pos.y)
+      if (draggingIndex !== null && onAnnotate) {
+        hasDragMovedRef.current = true
+        const pos = getNormalized(e.clientX, e.clientY)
+        if (pos) onAnnotate(draggingIndex, pos.x, pos.y)
+      }
+      if (resizingIndex !== null && onRadiusChange) {
+        onRadiusChange(resizingIndex, getRadiusFromPointer(e.clientX, e.clientY, resizingIndex))
+      }
+      if (rotatingIndex !== null && onRotationChange && rotationDragRef.current) {
+        const angle = getAngleFromPointer(e.clientX, e.clientY, rotatingIndex)
+        let delta = angle - rotationDragRef.current.lastAngle
+        if (delta > 180) delta -= 360
+        if (delta < -180) delta += 360
+        const newRotation = rotationDragRef.current.rotation + delta
+        rotationDragRef.current = { lastAngle: angle, rotation: newRotation }
+        onRotationChange(rotatingIndex, newRotation)
+      }
     },
-    [draggingIndex, onAnnotate, naturalRatio]
+    [draggingIndex, resizingIndex, rotatingIndex, onAnnotate, onRadiusChange, onRotationChange, naturalRatio]
   )
 
   const handleGlobalMouseUp = useCallback(() => {
-    didDragRef.current = true
+    const wasMarkerClick = draggingIndex !== null && !hasDragMovedRef.current
+    didDragRef.current = draggingIndex !== null || resizingIndex !== null || rotatingIndex !== null
+    rotationDragRef.current = null
     setDraggingIndex(null)
-  }, [])
+    setResizingIndex(null)
+    setRotatingIndex(null)
+    if (wasMarkerClick && onActivate) onActivate(draggingIndex!)
+  }, [draggingIndex, resizingIndex, rotatingIndex, onActivate])
 
   useEffect(() => {
-    if (draggingIndex === null) return
+    if (draggingIndex === null && resizingIndex === null && rotatingIndex === null) return
     window.addEventListener('mousemove', handleGlobalMouseMove)
     window.addEventListener('mouseup', handleGlobalMouseUp)
     return () => {
       window.removeEventListener('mousemove', handleGlobalMouseMove)
       window.removeEventListener('mouseup', handleGlobalMouseUp)
     }
-  }, [draggingIndex, handleGlobalMouseMove, handleGlobalMouseUp])
+  }, [draggingIndex, resizingIndex, rotatingIndex, handleGlobalMouseMove, handleGlobalMouseUp])
 
   function handleContainerClick(e: React.MouseEvent<HTMLDivElement>) {
     if (didDragRef.current) {
@@ -185,10 +248,32 @@ export function PhotoUpload({
     e.stopPropagation()
     e.preventDefault()
     didDragRef.current = false
+    hasDragMovedRef.current = false
     setDraggingIndex(index)
+    if (onActivate) onActivate(index)
+  }
+
+  function handleResizeMouseDown(e: React.MouseEvent, index: number) {
+    e.stopPropagation()
+    e.preventDefault()
+    didDragRef.current = false
+    setResizingIndex(index)
+  }
+
+  function handleRotateMouseDown(e: React.MouseEvent, index: number) {
+    e.stopPropagation()
+    e.preventDefault()
+    didDragRef.current = false
+    const ann = latestAnnotationsRef.current[index]
+    const currentRotation = ann?.rotation ?? markerRotation(markerSeed, index)
+    const angle = getAngleFromPointer(e.clientX, e.clientY, index)
+    rotationDragRef.current = { lastAngle: angle, rotation: currentRotation }
+    setRotatingIndex(index)
   }
 
   const isDragging = draggingIndex !== null
+  const isResizing = resizingIndex !== null
+  const isRotating = rotatingIndex !== null
   // Fall back to full-frame if image hasn't loaded yet
   const ca = naturalRatio ? contentArea(naturalRatio) : { left: 0, top: 0, width: 1, height: 1 }
 
@@ -236,43 +321,72 @@ export function PhotoUpload({
             />
 
             <div
-              className={`absolute inset-0 ${isDragging ? 'cursor-grabbing' : 'cursor-crosshair'}`}
+              className={`absolute inset-0 ${isDragging ? 'cursor-grabbing' : isResizing ? 'cursor-col-resize' : isRotating ? 'cursor-ew-resize' : 'cursor-crosshair'}`}
               onClick={handleContainerClick}
             >
               {annotations.map((ann, i) => {
-                const rot = markerRotation(markerSeed, i)
+                const rot = ann?.rotation ?? markerRotation(markerSeed, i)
+                const radius = ann?.radius ?? 0.09
+                const isActive = i === activeCloverIndex
+                // Rotation handle sits at the rotated "top" of the marker so it follows orientation
+                const rotRad = rot * Math.PI / 180
+                const handleLeft = 50 + 50 * Math.sin(rotRad)
+                const handleTop  = 50 - 50 * Math.cos(rotRad)
                 return ann ? (
                   <div
                     key={i}
-                    onMouseDown={(e) => handleDotMouseDown(e, i)}
-                    className={[
-                      'absolute select-none transition-transform duration-150 ease-out',
-                      isDragging && draggingIndex === i ? 'cursor-grabbing' : 'cursor-grab',
-                    ].join(' ')}
+                    className="absolute select-none transition-transform duration-150 ease-out"
                     style={{
-                      // Position relative to content area, expressed as % of the square container
                       left: `${(ca.left + ann.x * ca.width) * 100}%`,
                       top: `${(ca.top + ann.y * ca.height) * 100}%`,
-                      // Marker width is 18% of the image content width so it stays
-                      // proportional to the image regardless of letterbox bars
-                      width: `${ca.width * 18}%`,
+                      width: `${ca.width * radius * 200}%`,
                       aspectRatio: '1',
                       filter: 'drop-shadow(0 1px 6px rgba(0,0,0,0.5))',
                       transform: `translate(-50%, -50%) ${
                         isDragging && draggingIndex === i ? 'scale(1.1)'
-                        : i === activeCloverIndex ? 'scale(1.05)'
+                        : isActive ? 'scale(1.05)'
                         : 'scale(1)'
                       }`,
+                      pointerEvents: 'none',
                     }}
                   >
                     <CloverMarker
                       leafCount={leafCounts[i] ?? 4}
                       label={String.fromCharCode(65 + i)}
                       rotation={rot}
-                      active={i === activeCloverIndex}
+                      active={isActive}
                       dragging={isDragging && draggingIndex === i}
-                      spinning={leafCounts.length > 1 && i === activeCloverIndex}
+                      onMouseDown={(e) => handleDotMouseDown(e, i)}
                     />
+                    {isActive && (
+                      <>
+                        {/* Resize handle — fixed at 3 o'clock */}
+                        <div
+                          onMouseDown={(e) => handleResizeMouseDown(e, i)}
+                          className="absolute rounded-full border-2 border-white bg-accent/80 cursor-col-resize"
+                          style={{
+                            width: 12, height: 12,
+                            right: 0, top: '50%',
+                            transform: 'translate(50%, -50%)',
+                            boxShadow: '0 1px 4px rgba(0,0,0,0.5)',
+                            pointerEvents: 'auto',
+                          }}
+                        />
+                        {/* Rotation handle — follows the rotated top of the clover */}
+                        <div
+                          onMouseDown={(e) => handleRotateMouseDown(e, i)}
+                          className="absolute rounded-full border-2 bg-white cursor-ew-resize"
+                          style={{
+                            width: 12, height: 12,
+                            left: `${handleLeft}%`, top: `${handleTop}%`,
+                            transform: 'translate(-50%, -50%)',
+                            borderColor: 'var(--color-accent)',
+                            boxShadow: '0 1px 4px rgba(0,0,0,0.5)',
+                            pointerEvents: 'auto',
+                          }}
+                        />
+                      </>
+                    )}
                   </div>
                 ) : null
               })}

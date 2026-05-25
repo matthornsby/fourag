@@ -1,4 +1,8 @@
-import { FindCard } from "@/components/find-card";
+'use client'
+
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
+import Link from "next/link";
+import { MapPin } from "lucide-react";
 import { CloverMarker } from "@/components/clover-marker";
 import { markerRotation } from "@/lib/marker-rotation";
 import { computeLuck, luckAddedOnDay, luckToOpacity, luckAddedToMarkerSize } from "@/lib/luck";
@@ -6,6 +10,10 @@ import type { Find, Clover } from "@/types";
 
 interface Props {
   finds: (Find & { clovers: Clover[] })[];
+  /** 0 = week starts Sunday (Sun–Sat), 1 = week starts Monday (Mon–Sun). Default: 1. */
+  weekStartsOn?: 0 | 1;
+  /** Currently logged-in user id; when set, photo thumbnails link to the edit page for owned finds. */
+  userId?: string;
 }
 
 function dominantLeafCount(finds: (Find & { clovers: Clover[] })[], date: Date): number {
@@ -23,6 +31,7 @@ function dominantLeafCount(finds: (Find & { clovers: Clover[] })[], date: Date):
 }
 
 function MonthLabel({ date, today }: { date: Date; today: Date }) {
+  const cls = 'cal-month-label-inner flex flex-col leading-tight';
   const currentMonth = today.getMonth();
   const currentYear = today.getFullYear();
   const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
@@ -34,7 +43,7 @@ function MonthLabel({ date, today }: { date: Date; today: Date }) {
 
   if (month === currentMonth && year === currentYear) {
     return (
-      <div className="flex flex-col leading-tight">
+      <div className={cls}>
         <span className="text-sm font-semibold text-text-primary">This Month</span>
         <span className="text-xs text-text-secondary">{monthName}</span>
       </div>
@@ -43,7 +52,7 @@ function MonthLabel({ date, today }: { date: Date; today: Date }) {
 
   if (month === prevMonth && year === prevYear) {
     return (
-      <div className="flex flex-col leading-tight">
+      <div className={cls}>
         <span className="text-sm font-semibold text-text-primary">Last Month</span>
         <span className="text-xs text-text-secondary">{monthName}</span>
       </div>
@@ -52,21 +61,91 @@ function MonthLabel({ date, today }: { date: Date; today: Date }) {
 
   if (year === currentYear) {
     return (
-      <div className="flex flex-col leading-tight">
+      <div className={cls}>
         <span className="text-sm font-semibold text-text-primary">{monthName}</span>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col leading-tight">
+    <div className={cls}>
       <span className="text-sm font-semibold text-text-primary">{monthName}</span>
       <span className="text-xs text-text-secondary">{year}</span>
     </div>
   );
 }
 
-export function FindsCalendar({ finds }: Props) {
+// px a sentinel must travel above viewport top before its card is fully gone
+const EXIT_DISTANCE = 120;
+
+export function FindsCalendar({ finds, weekStartsOn = 1, userId }: Props) {
+  const [exitProgress, setExitProgress] = useState<Map<string, number>>(new Map());
+  const [orientations, setOrientations] = useState<Record<string, 'landscape' | 'portrait'>>({});
+  const [photoSide, setPhotoSide] = useState<'left' | 'right'>('left');
+  const [weekStart, setWeekStart] = useState<0 | 1>(weekStartsOn);
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [colCount, setColCount] = useState(7);
+
+  useLayoutEffect(() => {
+    const update = () => setColCount(window.innerWidth < 768 ? 1 : 7);
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.orientation =
+      photoSide === 'left' ? 'right-handed' : 'left-handed';
+  }, [photoSide]);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+
+  const detectOrientation = useCallback((img: HTMLImageElement, findId: string) => {
+    if (!img.naturalWidth) return;
+    const orientation = img.naturalWidth > img.naturalHeight ? 'landscape' : 'portrait';
+    setOrientations(prev => prev[findId] === orientation ? prev : { ...prev, [findId]: orientation });
+  }, []);
+
+  const handleImageLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>, findId: string) => {
+    detectOrientation(e.currentTarget, findId);
+  }, [detectOrientation]);
+
+  // Sentinel refs collected during render, observed once on mount.
+  // Sentinels live in the photo column (no overflow:hidden ancestors) so
+  // IntersectionObserver fires reliably in Safari.
+  const pendingSentinels = useRef<Map<string, HTMLElement>>(new Map());
+
+  const registerSentinel = useCallback((el: HTMLElement | null, findId: string) => {
+    if (el) {
+      pendingSentinels.current.set(findId, el);
+    } else {
+      pendingSentinels.current.delete(findId);
+    }
+  }, []);
+
+  useEffect(() => {
+    const update = () => {
+      setExitProgress(prev => {
+        const entries: [string, number][] = [];
+        let changed = false;
+        pendingSentinels.current.forEach((el, findId) => {
+          const top = el.getBoundingClientRect().top;
+          const progress = top >= 0 ? 0 : Math.min(1, -top / EXIT_DISTANCE);
+          entries.push([findId, progress]);
+          if (prev.get(findId) !== progress) changed = true;
+        });
+        if (!changed) return prev;
+        return new Map(entries);
+      });
+    };
+
+    window.addEventListener('scroll', update, { passive: true });
+    update();
+    return () => window.removeEventListener('scroll', update);
+  }, []);
+
   if (finds.length === 0) return null;
 
   const today = new Date();
@@ -77,9 +156,8 @@ export function FindsCalendar({ finds }: Props) {
   const earliestDate = new Date(earliest.found_at);
   const startOfFirstMonth = new Date(earliestDate.getFullYear(), earliestDate.getMonth(), 1);
 
-  // Build every day from the start of the earliest month through the end of the current week.
   const endOfCurrentWeek = new Date(today);
-  endOfCurrentWeek.setDate(today.getDate() + (6 - today.getDay())); // advance to Saturday
+  endOfCurrentWeek.setDate(today.getDate() + (weekStart + 6 - today.getDay() + 7) % 7);
 
   const allDays: Date[] = [];
   const cursor = new Date(startOfFirstMonth);
@@ -88,87 +166,110 @@ export function FindsCalendar({ finds }: Props) {
     cursor.setDate(cursor.getDate() + 1);
   }
 
-  // Pad leading blanks so day 1 falls in the correct column (0=Sun).
-  const leadingBlanks = startOfFirstMonth.getDay();
+  const leadingBlanks = colCount === 1 ? 0 : (startOfFirstMonth.getDay() - weekStart + 7) % 7;
   const cells: (Date | null)[] = [...Array(leadingBlanks).fill(null), ...allDays];
-  while (cells.length % 7 !== 0) cells.push(null);
+  if (colCount > 1) while (cells.length % colCount !== 0) cells.push(null);
 
-  // Split into weeks and reverse so the most recent week is at the top.
   const weeks: (Date | null)[][] = [];
-  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+  for (let i = 0; i < cells.length; i += colCount) weeks.push(cells.slice(i, i + colCount));
   weeks.reverse();
   const reversedCells = weeks.flat();
+  const totalRows = weeks.length;
 
-  // For each month, find the topmost row (lowest index) it appears in.
-  const monthFirstRows = new Map<string, { rowIndex: number; date: Date }>();
-  weeks.forEach((week, rowIndex) => {
-    for (const date of week) {
-      if (!date) continue;
+  // First occurrence of each month in reversed (newest-first) order = last chronological day of that month in the data.
+  const monthLabelIndices = new Set<number>();
+  {
+    const seen = new Set<string>();
+    reversedCells.forEach((date, i) => {
+      if (!date) return;
       const key = `${date.getFullYear()}-${date.getMonth()}`;
-      if (!monthFirstRows.has(key)) {
-        monthFirstRows.set(key, {
-          rowIndex,
-          date: new Date(date.getFullYear(), date.getMonth(), 1),
-        });
-      }
-    }
-  });
+      if (!seen.has(key)) { seen.add(key); monthLabelIndices.add(i); }
+    });
+  }
 
-  // Sort newest-first. If a month boundary falls inside the current week, two
-  // months share rowIndex 0 — push the older one down so labels don't overlap.
-  const monthEntries = Array.from(monthFirstRows.values())
-    .sort((a, b) => b.date.getTime() - a.date.getTime())
-    .reduce<{ rowIndex: number; date: Date }[]>((acc, entry) => {
-      const prev = acc[acc.length - 1];
-      acc.push({ ...entry, rowIndex: Math.max(entry.rowIndex, prev ? prev.rowIndex + 1 : 0) });
-      return acc;
-    }, []);
-
-  const monthSpans = monthEntries.map((entry, i) => {
-    const next = monthEntries[i + 1];
-    const endRow = next
-      ? Math.max(entry.rowIndex, next.rowIndex - 1)
-      : weeks.length - 1;
-    return { ...entry, endRow };
-  });
-
+  // Sort newest-first.
   const sortedFinds = [...finds].sort(
     (a, b) => new Date(b.found_at).getTime() - new Date(a.found_at).getTime()
   );
 
+  // Map each find to the reversed row it falls in (0 = top/newest row).
+  const msPerDay = 1000 * 60 * 60 * 24;
+  const findReversedRows = sortedFinds.map(find => {
+    const daysDiff = Math.round(
+      (new Date(find.found_at).getTime() - startOfFirstMonth.getTime()) / msPerDay
+    );
+    const cellIndex = leadingBlanks + Math.max(0, daysDiff);
+    const originalRow = Math.floor(cellIndex / colCount);
+    return Math.max(0, Math.min(totalRows - 1, totalRows - 1 - originalRow));
+  });
+
+  // Within each row, finds are already newest-first (from sortedFinds).
+  // Collect row groups to know posInRow and totalInRow per find.
+  const rowGroups = new Map<number, number[]>(); // row → indices into sortedFinds
+  findReversedRows.forEach((row, idx) => {
+    if (!rowGroups.has(row)) rowGroups.set(row, []);
+    rowGroups.get(row)!.push(idx);
+  });
+
+  // Compute the sentinel fraction (0–1 of total column height) for each find.
+  // Newest find in a row → fraction = row / totalRows (fires at row top).
+  // Each subsequent find in the same row → fraction increments by 1/(totalInRow*totalRows).
+  const findSentinelData = sortedFinds.map((find, idx) => {
+    const row = findReversedRows[idx];
+    const group = rowGroups.get(row)!;
+    const posInRow = group.indexOf(idx); // 0 = newest in this row
+    const totalInRow = group.length;
+    const fraction = (row + posInRow / totalInRow) / totalRows;
+    return { find, fraction };
+  });
+
+  const TOP_N = 5;
+
+  // Oldest-first (newest renders on top).
+  const oldestFirst = [...sortedFinds].reverse();
+
+  // Stack cards: non-fully-exited. TOP_N visible + 1 invisible buffer that fades in.
+  const stackFinds = oldestFirst.filter(f => (exitProgress.get(f.id) ?? 0) < 1);
+  const stackSlice = stackFinds.slice(-(TOP_N + 1));
+  const stackIdxMap = new Map(stackSlice.map((f, i) => [f.id, i]));
+
+  // Ghost cards: recently exited, kept in the render tree (same key = same <img> node)
+  // so the browser doesn't unload the decoded image on re-appear.
+  const ghostSlice = oldestFirst
+    .filter(f => (exitProgress.get(f.id) ?? 0) >= 1)
+    .slice(-TOP_N);
+
+  // Ghosts render first (behind) so their z-index can stay 0.
+  const combinedSlice = [...ghostSlice, ...stackSlice];
+
   return (
-    <div className="flex flex-col gap-4">
-      {/*
-        Single 8-column grid: columns 1-7 are day cells (minmax(0,1fr) each),
-        column 8 is the label/photo column (min 80px, max one cell-size share).
-        Day cells are explicitly placed so auto-placement never spills into col 8.
-        Row heights come from the aspect-square day cells, so col 8's min-width
-        can't distort row heights at narrow viewports.
-      */}
+    <>
+    <div className="flex gap-0">
+      {/* Calendar grid: colCount day cols + narrow month-label col */}
       <div
-        className="max-w-[760px]"
+        className="cal-grid grid"
         style={{
-          display: 'grid',
+          '--cal-gap': 'clamp(2px, .5vw, 6px)',
+          '--chamfer': 'calc(var(--cal-gap) * 3.2)',
           gap: 'var(--cal-gap)',
-          gridTemplateColumns: 'repeat(7, minmax(0, 1fr)) minmax(80px, calc((100% - 7 * var(--cal-gap)) / 8))',
-          '--cal-gap': 'clamp(2px, 0.9vw, 8px)',
         } as React.CSSProperties}
       >
         {reversedCells.map((date, i) => {
-          const rowIndex = Math.floor(i / 7);
-          const colIndex = (i % 7) + 1;
+          const rowIndex = Math.floor(i / colCount);
+          const colIndex = (i % colCount) + 1;
 
           if (!date) return (
             <div
               key={`blank-${i}`}
-              className="aspect-square"
-              style={{ gridRow: rowIndex + 1, gridColumn: colIndex }}
+              className={`aspect-square day-num-${colIndex}`}
+              style={{ gridRowStart: rowIndex + 1 }}
             />
           );
 
           const dayNum = date.getDate();
           const cellKey = `${date.getFullYear()}-${date.getMonth()}-${dayNum}`;
           const isToday = date.toDateString() === today.toDateString();
+          const isWeekend = date.getDay() === 0 || date.getDay() === 6;
           const luck = Math.round(computeLuck(finds, new Date(date.getFullYear(), date.getMonth(), dayNum, 23, 59, 59)));
           const opacity = luckToOpacity(luck);
           const added = luckAddedOnDay(finds, date);
@@ -176,37 +277,24 @@ export function FindsCalendar({ finds }: Props) {
           const leafCount = dominantLeafCount(finds, date);
           const rotation = markerRotation(`cal-${cellKey}`, 0);
 
-          return (
+          const dayCell = (
             <div
               key={cellKey}
-              className="day-cell relative aspect-square group cursor-default overflow-hidden"
+              className={['day-cell', `day-num-${colIndex}`, isWeekend && 'weekend', isToday && 'today'].filter(Boolean).join(' ')}
               style={{
-                gridRow: rowIndex + 1,
-                gridColumn: colIndex,
-                borderRadius: 'calc(var(--cal-gap) * 0.8)',
+                gridRowStart: rowIndex + 1,
                 '--day-bg': `color-mix(in srgb, var(--color-accent) ${opacity * 100 * .75}%, var(--color-surface))`,
-                backgroundColor: 'var(--day-bg)',
-                outline: isToday ? '1.5px solid var(--color-text-primary)' : undefined,
               } as React.CSSProperties}
             >
               {luck > 0 && (
-                <span className="absolute inset-0 z-10 flex items-center justify-center text-xs font-semibold opacity-0 group-hover:opacity-100 transition-opacity duration-150"
-                  style={{ borderRadius: 'inherit', backgroundColor: 'rgba(0,16,33,0.75)', color: 'rgba(186,255,70,1)' }}
-                >
+                <span className="day-cell-luck">
                   {luck}
                 </span>
               )}
 
-              <span
-                className="day-cell-label absolute top-1 right-1 text-[10px] leading-none opacity-60"
-                style={{
-                  color: 'contrast-color(var(--day-bg))',
-                  opacity: isToday || dayNum === 1 ? '100%' : undefined,
-                  fontWeight: isToday || dayNum === 1 ? '600' : undefined,
-                }}
-              >
+              <span className={['day-cell-label', (isToday || dayNum === 1) && 'notable'].filter(Boolean).join(' ')}>
                 {dayNum === 1
-                  ? `${date.toLocaleDateString("en-GB", { month: "short" })} 1`
+                  ? `${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][date.getMonth()]} 1`
                   : dayNum}
               </span>
 
@@ -220,26 +308,169 @@ export function FindsCalendar({ finds }: Props) {
               )}
             </div>
           );
-        })}
 
-        {/* Month labels in col 8 — span their month's full row range, sticky inside */}
-        {monthSpans.map(({ rowIndex, endRow, date }) => (
-          <div
-            key={`month-${date.getFullYear()}-${date.getMonth()}`}
-            style={{ gridColumn: 8, gridRow: `${rowIndex + 1} / ${endRow + 2}` }}
-          >
-            <div className="sticky top-2">
-              <MonthLabel date={date} today={today} />
-            </div>
-          </div>
-        ))}
+          if (!monthLabelIndices.has(i)) return dayCell;
+
+          return (
+            <React.Fragment key={cellKey}>
+              <div
+                className="cal-month-label"
+                style={{ '--cal-month-row': rowIndex + 1 } as React.CSSProperties}
+              >
+                <MonthLabel date={date} today={today} />
+              </div>
+              {dayCell}
+            </React.Fragment>
+          );
+        })}
       </div>
 
-      <div className="flex flex-col gap-4">
-        {sortedFinds.map((find) => (
-          <FindCard key={find.id} find={find} />
+      {/*
+        Photo column. Contains:
+        1. Zero-height sentinel divs at computed fractional positions.
+           Sentinels have no overflow:hidden ancestors, so IntersectionObserver
+           fires correctly in Safari.
+        2. A single sticky photo stack that shows only the finds whose sentinels
+           haven't yet exited the top of the viewport.
+
+        Sentinel fraction math (7-column layout):
+          fraction = (reversedRow + posInRow / totalInRow) / totalRows
+          - reversedRow 0 = top/newest row
+          - posInRow 0 = newest find in that row (exits first)
+        When colCount changes (future mobile layout), swap reversedRow to use
+        per-day rows instead of per-week rows.
+      */}
+      <div className="cal-photo-col relative">
+        {findSentinelData.map(({ find, fraction }) => (
+          <div
+            key={`sentinel-${find.id}`}
+            ref={el => registerSentinel(el as HTMLElement | null, find.id)}
+            data-find-id={find.id}
+            className="absolute inset-x-0 h-0 pointer-events-none"
+            style={{ top: `${fraction * 100}%` }}
+          />
         ))}
+
+        <div className="sticky top-0 h-screen flex items-center py-4">
+          {/* Square container: portrait fills height (3/4 wide), landscape fills width (3/4 tall) — equal area, no crop */}
+          <div className="relative w-full aspect-square shrink-0">
+            {combinedSlice.map((find) => {
+              const exitProg = exitProgress.get(find.id) ?? 0;
+              const isGhost = exitProg >= 1;
+              const isLandscape = (orientations[find.id] ?? 'portrait') === 'landscape';
+              const rotation = markerRotation(find.id, 0) * 0.5;
+              const offsetX = markerRotation(find.id, 1) * 0.4;
+              const offsetY = markerRotation(find.id, 2) * 0.4;
+              const exitX = markerRotation(find.id, 3) * 20;
+              const exitY = -(150 + Math.abs(markerRotation(find.id, 4)) * 8);
+              const exitRot = markerRotation(find.id, 5) * 2;
+              const baseTransform = isLandscape
+                ? `translateY(-50%) rotate(${rotation + exitProg * exitRot}deg) translate(${offsetX + exitProg * exitX}px, ${offsetY + exitProg * exitY}px)`
+                : `translateX(-50%) rotate(${rotation + exitProg * exitRot}deg) translate(${offsetX + exitProg * exitX}px, ${offsetY + exitProg * exitY}px)`;
+
+              if (isGhost) {
+                return (
+                  <div
+                    key={find.id}
+                    className={`absolute overflow-hidden rounded-xl pointer-events-none ${
+                      isLandscape ? 'inset-x-0 top-1/2 aspect-[4/3]' : 'inset-y-0 left-1/2 aspect-[3/4]'
+                    }`}
+                    style={{ zIndex: 0, opacity: 0, transform: baseTransform }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={find.photo_url} alt="" className="w-full h-full object-cover block" />
+                  </div>
+                );
+              }
+
+              const stackIdx = stackIdxMap.get(find.id) ?? 0;
+              const posFromTop = stackSlice.length - 1 - stackIdx;
+              const isTop = posFromTop === 0;
+              // Opacity only starts dropping in the final 30% of the exit movement.
+              const FADE_START = 0.85;
+              const opacity = posFromTop >= TOP_N ? 0 : Math.max(0, 1 - Math.max(0, exitProg - FADE_START) / (1 - FADE_START));
+              const transition = exitProg === 0 ? 'opacity 400ms ease' : undefined;
+
+              const cardClass = `absolute overflow-hidden rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.5)] ${
+                isLandscape ? 'inset-x-0 top-1/2 aspect-[4/3]' : 'inset-y-0 left-1/2 aspect-[3/4]'
+              }`;
+              const cardStyle = { zIndex: stackIdx + 1, opacity, transition, transform: baseTransform };
+              const cardInner = (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={find.photo_url}
+                    alt=""
+                    loading="lazy"
+                    onLoad={e => handleImageLoad(e, find.id)}
+                    ref={el => { if (el?.complete && el.naturalWidth > 0) detectOrientation(el, find.id); }}
+                    className="w-full h-full object-cover block"
+                  />
+                  <div className="absolute bottom-0 left-0 flex flex-col items-start justify-end-safe gap-2 px-2 py-2 aspect-video min-w-60 font-semibold text-xs"
+                    style={{ background: 'linear-gradient(12.5deg, color-mix(in srgb, var(--color-background) 90%, rgba(0,0,0,.5)), transparent 75%, transparent)'}}>
+                    <span className={[
+                        'truncate flex gap-1 transition-opacity duration-300',
+                        isTop && find.location_name ? 'opacity-100' : 'opacity-0',
+                      ].join(' ')}>
+                      <MapPin size={12} strokeWidth={2} className="shrink-0" />{find.location_name}
+                    </span>
+                  </div>
+                </>
+              );
+
+              return userId === find.user_id ? (
+                <Link key={find.id} href={`/account/finds/${find.id}/edit`} className={cardClass} style={cardStyle}>
+                  {cardInner}
+                </Link>
+              ) : (
+                <div key={find.id} className={cardClass} style={cardStyle}>
+                  {cardInner}
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </div>
+
+    {/* Temporary controls palette */}
+    <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 px-1.5 py-1.5 rounded-2xl shadow-xl text-xs font-medium"
+      style={{ background: 'var(--color-surface)', border: '1px solid color-mix(in srgb, var(--color-text-primary) 12%, transparent)' }}>
+      <button onClick={() => setPhotoSide('left')}
+        className="px-3 py-1.5 rounded-xl transition-colors"
+        style={{ background: photoSide === 'left' ? 'color-mix(in srgb, var(--color-text-primary) 15%, transparent)' : 'transparent', color: 'var(--color-text-primary)' }}>
+        Right-handed
+      </button>
+      <button onClick={() => setPhotoSide('right')}
+        className="px-3 py-1.5 rounded-xl transition-colors"
+        style={{ background: photoSide === 'right' ? 'color-mix(in srgb, var(--color-text-primary) 15%, transparent)' : 'transparent', color: 'var(--color-text-primary)' }}>
+        Left-handed
+      </button>
+      <div className="w-px h-4 mx-1" style={{ background: 'color-mix(in srgb, var(--color-text-primary) 15%, transparent)' }} />
+      <button onClick={() => setTheme('dark')}
+        className="px-3 py-1.5 rounded-xl transition-colors"
+        style={{ background: theme === 'dark' ? 'color-mix(in srgb, var(--color-text-primary) 15%, transparent)' : 'transparent', color: 'var(--color-text-primary)' }}>
+        Dark
+      </button>
+      <button onClick={() => setTheme('light')}
+        className="px-3 py-1.5 rounded-xl transition-colors"
+        style={{ background: theme === 'light' ? 'color-mix(in srgb, var(--color-text-primary) 15%, transparent)' : 'transparent', color: 'var(--color-text-primary)' }}>
+        Light
+      </button>
+      <div className="w-px h-4 mx-1" style={{ background: 'color-mix(in srgb, var(--color-text-primary) 15%, transparent)' }} />
+      <button onClick={() => setWeekStart(1)}
+        className="px-3 py-1.5 rounded-xl transition-colors"
+        style={{ background: weekStart === 1 ? 'color-mix(in srgb, var(--color-text-primary) 15%, transparent)' : 'transparent', color: 'var(--color-text-primary)' }}>
+        Mon
+      </button>
+      <button onClick={() => setWeekStart(0)}
+        className="px-3 py-1.5 rounded-xl transition-colors"
+        style={{ background: weekStart === 0 ? 'color-mix(in srgb, var(--color-text-primary) 15%, transparent)' : 'transparent', color: 'var(--color-text-primary)' }}>
+        Sun
+      </button>
+    </div>
+    </>
   );
 }
+
+

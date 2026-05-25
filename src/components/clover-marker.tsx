@@ -10,6 +10,7 @@ interface CloverMarkerProps {
   active?: boolean
   dragging?: boolean
   spinning?: boolean
+  onMouseDown?: (e: React.MouseEvent<SVGPathElement>) => void
 }
 
 export function CloverMarker({
@@ -19,6 +20,7 @@ export function CloverMarker({
   active = false,
   dragging = false,
   spinning = false,
+  onMouseDown,
 }: CloverMarkerProps) {
   const groupRef = useRef<SVGGElement>(null)
   const animRef  = useRef<Animation | null>(null)
@@ -96,9 +98,14 @@ export function CloverMarker({
         Label (circle + text) are siblings to the outer group so they stay upright
         regardless of either the static rotation or the spin.
       */}
+      {active && (
+        <circle cx="50" cy="50" r="48" fill="none" stroke="var(--color-accent)" strokeWidth="2.5" strokeDasharray="6 3.5" opacity="0.9" style={{ pointerEvents: 'none' }} />
+      )}
       <g style={{ transform: `rotate(${rotation}deg)`, transformOrigin: '50% 50%' }}>
         <g ref={groupRef} style={{ transformOrigin: '50% 50%' }}>
-          <path d={d} fill="none" stroke="white" strokeWidth="5" strokeLinejoin="round" />
+          {/* Hit-test area: transparent fill so only the inside of the clover responds */}
+          <path d={d} fill="transparent" style={{ pointerEvents: 'fill', cursor: onMouseDown ? 'grab' : 'default' }} onMouseDown={onMouseDown} />
+          <path d={d} fill="none" stroke="white" strokeWidth="5" strokeLinejoin="round" style={{ pointerEvents: 'none' }} />
         </g>
       </g>
       {label && (

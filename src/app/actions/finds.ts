@@ -29,7 +29,7 @@ export async function createFind(formData: FormData): Promise<{ error: string } 
   const leafCountsRaw = formData.get('leaf_counts') as string
 
   let leafCounts: number[]
-  let annotations: ({ x: number; y: number } | null)[]
+  let annotations: ({ x: number; y: number; radius?: number; rotation?: number } | null)[]
   try {
     leafCounts = JSON.parse(leafCountsRaw)
     if (!Array.isArray(leafCounts) || leafCounts.length === 0) {
@@ -83,7 +83,10 @@ export async function createFind(formData: FormData): Promise<{ error: string } 
     leaf_count: count,
     annotation_x: annotations[i]?.x ?? null,
     annotation_y: annotations[i]?.y ?? null,
-    annotation_radius: null,
+    annotation_radius: annotations[i]?.radius ?? null,
+    annotation_rotation: annotations[i]?.rotation != null
+      ? ((annotations[i]!.rotation! % 360) + 360) % 360
+      : null,
   }))
 
   const { error: cloversError } = await supabase.from('clovers').insert(cloverRows)
@@ -131,7 +134,7 @@ export async function updateFind(findId: string, formData: FormData): Promise<{ 
   const leafCountsRaw = formData.get('leaf_counts') as string
 
   let leafCounts: number[]
-  let annotations: ({ x: number; y: number } | null)[]
+  let annotations: ({ x: number; y: number; radius?: number; rotation?: number } | null)[]
   try {
     leafCounts = JSON.parse(leafCountsRaw)
     if (!Array.isArray(leafCounts) || leafCounts.length === 0) {
@@ -191,27 +194,35 @@ export async function updateFind(findId: string, formData: FormData): Promise<{ 
     return { error: `Couldn't update your find — ${updateError.message}` }
   }
 
-  const { error: deleteError } = await supabase
+  // Snapshot existing clover IDs before touching anything. If the insert below
+  // fails we leave the originals intact; we only delete them after a confirmed insert.
+  const { data: existingClovers } = await supabase
     .from('clovers')
-    .delete()
+    .select('id')
     .eq('find_id', findId)
 
-  if (deleteError) {
-    return { error: `Couldn't update clover details — ${deleteError.message}` }
-  }
+  const existingIds = (existingClovers ?? []).map((c) => c.id as string)
 
   const cloverRows = leafCounts.map((count, i) => ({
     find_id: findId,
     leaf_count: count,
     annotation_x: annotations[i]?.x ?? null,
     annotation_y: annotations[i]?.y ?? null,
-    annotation_radius: null,
+    annotation_radius: annotations[i]?.radius ?? null,
+    annotation_rotation: annotations[i]?.rotation != null
+      ? ((annotations[i]!.rotation! % 360) + 360) % 360
+      : null,
   }))
 
   const { error: cloversError } = await supabase.from('clovers').insert(cloverRows)
 
   if (cloversError) {
-    return { error: `Find updated, but couldn't record clover details — ${cloversError.message}` }
+    return { error: `Couldn't record clover details — ${cloversError.message}` }
+  }
+
+  // Insert succeeded — now it's safe to remove the old rows.
+  if (existingIds.length > 0) {
+    await supabase.from('clovers').delete().in('id', existingIds)
   }
 
   redirect(`/finds/${findId}`)

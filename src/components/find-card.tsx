@@ -62,7 +62,7 @@ export function FindCard({ find }: FindCardProps) {
               style={{
                 left: `${clover.annotation_x * 100}%`,
                 top: `${clover.annotation_y * 100}%`,
-                width: '18%',
+                width: `${(clover.annotation_radius ?? 0.09) * 200}%`,
                 aspectRatio: '1',
                 filter: 'drop-shadow(0 1px 6px rgba(0,0,0,0.5))',
                 transform: 'translate(-50%, -50%)',
@@ -70,7 +70,7 @@ export function FindCard({ find }: FindCardProps) {
             >
               <CloverMarker
                 leafCount={clover.leaf_count}
-                rotation={markerRotation(find.id, i)}
+                rotation={clover.annotation_rotation ?? markerRotation(find.id, i)}
               />
             </div>
           ) : null

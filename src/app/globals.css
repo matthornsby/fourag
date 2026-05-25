@@ -2,6 +2,7 @@
 
 @theme {
   --color-background: #001831;
+
   --color-surface: rgba(0,0,0,.2);
   --color-border: rgba(0,0,0,.3);
   --color-text-primary: #ffffff;
@@ -10,12 +11,222 @@
   --color-accent-light: rgba(0,0,0,.1);
   --color-error: #B91C1C;
   --color-text-contrast: var(--color-text-primary);
+
+  --width-main-max: 1600px;
+
+  --wallpaper-gradient-color-1: color-mix(in srgb, #5100FF 40%, var(--color-background));
+  --wallpaper-gradient-color-2: color-mix(in srgb, #BAFF46 10%, var(--color-background));;
+  
+}
+
+/* Light theme token overrides */
+[data-theme="light"] {
+  --color-background: #dededb;
+  --color-surface: rgba(255, 255, 255, .5);
+  --color-border: rgba(0, 0, 0, .12);
+  --color-text-primary: #001831;
+  --color-text-secondary: #78716C;
+  --color-accent: #5a9e00;
+  --color-accent-light: rgba(90, 158, 0, .1);
+  --color-error: #B91C1C;
+
+  --wallpaper-gradient-color-1: color-mix(in srgb, #5100FF 20%, var(--color-background));
+  --wallpaper-gradient-color-2: color-mix(in srgb, #BAFF46 20%, var(--color-background));;
 }
 
 body {
   background-color: var(--color-background);
   color: var(--color-text-primary);
 }
+
+#wallpaper {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100lvw;
+  height: 100lvh;
+  z-index: -1;
+  pointer-events: none;
+
+
+  --wallpaper-gradient-1-size: max(600px, 70lvw);
+  --wallpaper-gradient-2-size: max(900px, 90lvw);
+
+  background-color: var(--color-background);
+  background-image:
+    radial-gradient(closest-side in oklch, var(--wallpaper-gradient-color-1), transparent),
+    radial-gradient(closest-side in oklch, var(--wallpaper-gradient-color-2), transparent);
+  background-size:
+    var(--wallpaper-gradient-1-size) var(--wallpaper-gradient-1-size),
+    var(--wallpaper-gradient-2-size) var(--wallpaper-gradient-2-size);
+  background-repeat: no-repeat, no-repeat;
+  background-position:
+    calc(var(--wallpaper-gradient-1-size) * -.5) calc(var(--wallpaper-gradient-1-size) * -.6),
+    calc(100lvw - (var(--wallpaper-gradient-2-size) * .6)) calc(100lvh - (var(--wallpaper-gradient-2-size) * .4));
+}
+
+/* ─── Finds Calendar ──────────────────────────────────────────────────────── */
+
+
+/* Right-handed: photos left, calendar right, month labels left (right-aligned text) */
+[data-orientation="right-handed"] {
+  .cal-grid { grid-template-columns: minmax(60px, 72px) repeat(7, minmax(0, 1fr)); order: 2; }
+  .cal-photo-col { order: 1; margin-left: 0; margin-right: 1rem; }
+  .cal-month-label { grid-column: 1; grid-row-start: var(--cal-month-row, auto); }
+  .cal-month-label-inner { align-items: flex-end; text-align: right; }
+  .day-num-1 { grid-column-start: 2; }
+  .day-num-2 { grid-column-start: 3; }
+  .day-num-3 { grid-column-start: 4; }
+  .day-num-4 { grid-column-start: 5; }
+  .day-num-5 { grid-column-start: 6; }
+  .day-num-6 { grid-column-start: 7; }
+  .day-num-7 { grid-column-start: 8; }
+}
+
+/* Left-handed: photos right, calendar left, month labels right */
+[data-orientation="left-handed"] {
+  .cal-grid { grid-template-columns: repeat(7, minmax(0, 1fr)) minmax(60px, 72px); order: 1; }
+  .cal-photo-col { order: 2; margin-left: 1rem; margin-right: 0; }
+  .cal-month-label { grid-column: 8; grid-row-start: var(--cal-month-row, auto); }
+  .cal-month-label-inner { align-items: flex-start; text-align: left; }
+  .day-num-1 { grid-column-start: 1; }
+  .day-num-2 { grid-column-start: 2; }
+  .day-num-3 { grid-column-start: 3; }
+  .day-num-4 { grid-column-start: 4; }
+  .day-num-5 { grid-column-start: 5; }
+  .day-num-6 { grid-column-start: 6; }
+  .day-num-7 { grid-column-start: 7; }
+}
+
+.cal-grid {
+  flex: 1;
+  min-width: 0;
+}
+
+.cal-photo-col {
+  width: 55%;
+  max-width:650px;
+  flex-shrink: 0;
+}
+
+.cal-month-label {
+  height: 0;
+  overflow: visible;
+  margin-bottom: calc(var(--cal-gap) * -1);
+  white-space: nowrap;
+}
+
+.day-cell {
+  --cell-border-radius: calc(var(--cal-gap) * 1.7);
+  @apply relative aspect-square cursor-default overflow-hidden;
+  grid-row-end: auto;
+  grid-column-end: auto;
+  border-radius: var(--cell-border-radius);
+  background-color: var(--day-bg);
+
+  &.weekend {
+    clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--chamfer)), calc(100% - var(--chamfer)) 100%, 0 100%);
+    /* mask: linear-gradient(-45deg, rgba(0,0,0,.3) var(--chamfer), black var(--chamfer)); */
+  }
+
+  .day-cell-label {
+    @apply absolute top-0 right-0 leading-none opacity-60 rounded-full;
+    font-size: calc(var(--cal-gap) * 2);
+    margin: .3em .1em 0 0;
+    padding: .3em .5em .4em;
+    color: contrast-color(var(--day-bg));
+    text-box: trim-both cap alphabetic;
+
+    &.notable {
+      @apply opacity-100 font-semibold;
+    }
+  }
+
+  &.today .day-cell-label {
+    color: contrast-color(var(--color-background));
+    background: var(--color-background);
+    margin-right: .3em;
+  }
+
+  .day-cell-luck {
+    @apply absolute inset-0 z-10 flex items-center justify-center text-xs font-semibold;
+    opacity: 0;
+    transition: opacity 150ms;
+    border-radius: inherit;
+    background-color: rgb(0 16 33 / 75%);
+    color: var(--color-accent);
+  }
+
+  &:hover .day-cell-luck {
+    opacity: 1;
+  }
+}
+
+/* ─── Mobile calendar layout (< 768px) ───────────────────────────────────── */
+
+@media (max-width: 767px) {
+  
+
+  
+  /* Right-handed: month label col 1, day col 2 */
+  [data-orientation="right-handed"] {
+    & .cal-grid {
+      grid-template-columns: minmax(40px, 55px) 1fr;
+    }
+    & .cal-month-label {
+      grid-row-start: auto;
+    }
+    & .day-num-1, & .day-num-2, & .day-num-3, & .day-num-4,
+    & .day-num-5, & .day-num-6, & .day-num-7 {
+      grid-column: 2 !important;
+      grid-row: auto !important;
+    }
+  }
+
+  /* Left-handed: day col 1, month label col 2 */
+  [data-orientation="left-handed"] {
+    & .cal-grid {
+      grid-template-columns: 1fr minmax(40px, 55px);
+    }
+    & .cal-month-label {
+      grid-column: 2 !important;
+      grid-row-start: auto;
+    }
+    & .day-num-1, & .day-num-2, & .day-num-3, & .day-num-4,
+    & .day-num-5, & .day-num-6, & .day-num-7 {
+      grid-column: 1 !important;
+      grid-row: auto !important;
+    }
+  }
+
+  .cal-photo-col > .sticky{
+    width: calc(100lvw - 6rem + (var(--spacing) * 6));
+    transform: translateX( calc((var(--spacing) * -6 ) - 18lvw) );
+  }
+  .cal-grid{
+      transform: translateX(calc(var(--spacing) * 6 ));
+      max-width: 7rem;
+      flex: auto;
+      align-self: flex-end;
+      margin-left: auto;
+  }
+
+
+  /* Fixed height replaces aspect-square */
+  .day-cell {
+    aspect-ratio: auto;
+    height: 1.5rem;
+  }
+
+  /* Hide blank padding cells; month labels stay visible */
+  .cal-grid > div:not(.day-cell):not(.cal-month-label) {
+    display: none;
+  }
+
+  
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
 
 .text-contrast{
  color: contrast-color(var(--color-background));
