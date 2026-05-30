@@ -17,6 +17,7 @@ export default async function Home() {
       .from("finds")
       .select("*, clovers(*)")
       .in("location_privacy", ["public", "approximate"])
+      .eq("status", "approved")
       .order("found_at", { ascending: false }),
   ]);
 
@@ -27,7 +28,7 @@ export default async function Home() {
     : [];
 
   return (
-    <main className="flex-1">
+    <main className="flex-1" style={{ overflowY: 'clip' }}>
       <div className="mx-auto max-w-(--width-main-max) px-4 sm:px-6 py-8 flex flex-col gap-6">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { signOut } from "@/app/actions/auth";
 
 interface SiteHeaderProps {
-  user: { id: string } | null;
+  user: { id: string; username: string } | null;
 }
 
 export function SiteHeader({ user }: SiteHeaderProps) {
@@ -16,31 +16,39 @@ export function SiteHeader({ user }: SiteHeaderProps) {
           Fourag
         </Link>
 
-        {user ? (
-          <div className="flex items-center gap-4">
-            <Link
-              href="/account/finds/new"
-              className="text-sm text-text-secondary hover:text-text-primary transition-colors duration-150"
-            >
-              Log a find
-            </Link>
-            <form action={signOut}>
-              <button
-                type="submit"
-                className="text-sm text-text-secondary hover:text-text-primary transition-colors duration-150"
-              >
-                Sign out
-              </button>
-            </form>
-          </div>
-        ) : (
+        <div className="flex items-center gap-4">
           <Link
-            href="/auth/sign-in"
+            href="/account/finds/new"
             className="text-sm text-text-secondary hover:text-text-primary transition-colors duration-150"
           >
-            Sign in
+            Log a find
           </Link>
-        )}
+          {user ? (
+            <>
+              <Link
+                href={`/${user.username}`}
+                className="text-sm text-text-secondary hover:text-text-primary transition-colors duration-150"
+              >
+                {user.username}
+              </Link>
+              <form action={signOut}>
+                <button
+                  type="submit"
+                  className="text-sm text-text-secondary hover:text-text-primary transition-colors duration-150"
+                >
+                  Sign out
+                </button>
+              </form>
+            </>
+          ) : (
+            <Link
+              href="/auth/sign-in"
+              className="text-sm text-text-secondary hover:text-text-primary transition-colors duration-150"
+            >
+              Sign in
+            </Link>
+          )}
+        </div>
       </div>
     </header>
   );

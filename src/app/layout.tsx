@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { SiteHeader } from "@/components/site-header";
+import { HashRedirect } from "@/components/hash-redirect";
 import { createClient } from "@/lib/supabase-server";
 
 const geistSans = Geist({
@@ -29,6 +30,8 @@ export default async function RootLayout({
     data: { user },
   } = await supabase.auth.getUser();
 
+  const username = user?.user_metadata?.username as string | undefined;
+
   return (
     <html
       lang="en"
@@ -36,7 +39,8 @@ export default async function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <div id="wallpaper" aria-hidden="true" />
-        <SiteHeader user={user ? { id: user.id } : null} />
+        <HashRedirect />
+        <SiteHeader user={user && username ? { id: user.id, username } : null} />
         {children}
       </body>
     </html>

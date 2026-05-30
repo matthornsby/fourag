@@ -4,7 +4,7 @@ import { useState, useTransition, useEffect } from 'react'
 import Link from 'next/link'
 import { PhotoUpload } from './photo-upload'
 import { CloverFields } from './clover-fields'
-import { createFind, updateFind, deleteFind } from '@/app/actions/finds'
+import { createFind, updateFind, deleteFind, createAnonymousFind, createFindAndRequestAccount } from '@/app/actions/finds'
 import { markerRotation } from '@/lib/marker-rotation'
 import type { Find, Clover } from '@/types'
 
@@ -33,9 +33,10 @@ function formatCoords(lat: string, lng: string): string {
 
 interface FindFormProps {
   find?: Find & { clovers: Clover[] }
+  isAuthenticated?: boolean
 }
 
-export function FindForm({ find }: FindFormProps) {
+export function FindForm({ find, isAuthenticated = true }: FindFormProps) {
   const isEdit = find !== undefined
 
   const [photoFile, setPhotoFile] = useState<File | null>(null)
@@ -70,6 +71,10 @@ export function FindForm({ find }: FindFormProps) {
   const [activeCloverIndex, setActiveCloverIndex] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
+  const [step, setStep] = useState<'find' | 'account'>('find')
+  const [accountUsername, setAccountUsername] = useState('')
+  const [accountEmail, setAccountEmail] = useState('')
+  const [accountPassword, setAccountPassword] = useState('')
 
   function geocode(latVal: string, lngVal: string, privacy: string) {
     setLookingUp(true)
@@ -135,13 +140,7 @@ export function FindForm({ find }: FindFormProps) {
     })
   }
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-    setError(null)
-
-    if (!isEdit && !photoFile) { setError('A photo is required.'); return }
-    if (!foundAt) { setError('Date and time found is required.'); return }
-
+  function buildFindFormData() {
     const formData = new FormData()
     if (photoFile) formData.append('photoFile', photoFile)
     formData.append('found_at', foundAt)
@@ -152,13 +151,49 @@ export function FindForm({ find }: FindFormProps) {
     if (notes) formData.append('notes', notes)
     formData.append('leaf_counts', JSON.stringify(leafCounts))
     formData.append('annotations', JSON.stringify(annotations))
+    return formData
+  }
+
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    setError(null)
+
+    if (step === 'account') {
+      const formData = buildFindFormData()
+      formData.append('username', accountUsername)
+      formData.append('email', accountEmail)
+      formData.append('password', accountPassword)
+      startTransition(async () => {
+        const result = await createFindAndRequestAccount(formData)
+        if (result?.error) setError(result.error)
+      })
+      return
+    }
+
+    if (!isEdit && !photoFile) { setError('A photo is required.'); return }
+    if (!foundAt) { setError('Date and time found is required.'); return }
+
+    if (!isAuthenticated) {
+      startTransition(async () => {
+        const result = await createAnonymousFind(buildFindFormData())
+        if (result?.error) setError(result.error)
+      })
+      return
+    }
 
     startTransition(async () => {
       const result = isEdit
-        ? await updateFind(find.id, formData)
-        : await createFind(formData)
+        ? await updateFind(find.id, buildFindFormData())
+        : await createFind(buildFindFormData())
       if (result?.error) setError(result.error)
     })
+  }
+
+  function handleRequestAccount() {
+    if (!isEdit && !photoFile) { setError('A photo is required.'); return }
+    if (!foundAt) { setError('Date and time found is required.'); return }
+    setError(null)
+    setStep('account')
   }
 
   function handleDelete() {
@@ -277,6 +312,49 @@ export function FindForm({ find }: FindFormProps) {
         />
       </div>
 
+      {/* Step 2: account details for unauthenticated "request account" path */}
+      {step === 'account' && (
+        <div className="flex flex-col gap-4 rounded-lg border border-border bg-surface px-4 py-4">
+          <p className="text-sm font-medium text-text-primary">Create your account</p>
+          <div>
+            <label htmlFor="account-username" className={labelClass}>Username</label>
+            <input
+              id="account-username"
+              type="text"
+              autoComplete="username"
+              required
+              value={accountUsername}
+              onChange={(e) => setAccountUsername(e.target.value)}
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label htmlFor="account-email" className={labelClass}>Email</label>
+            <input
+              id="account-email"
+              type="email"
+              autoComplete="email"
+              required
+              value={accountEmail}
+              onChange={(e) => setAccountEmail(e.target.value)}
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label htmlFor="account-password" className={labelClass}>Password</label>
+            <input
+              id="account-password"
+              type="password"
+              autoComplete="new-password"
+              required
+              value={accountPassword}
+              onChange={(e) => setAccountPassword(e.target.value)}
+              className={inputClass}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Error */}
       {error && (
         <p className="text-sm text-error rounded-md bg-red-50 border border-red-200 px-3 py-2">
@@ -285,30 +363,74 @@ export function FindForm({ find }: FindFormProps) {
       )}
 
       {/* Submit */}
-      <button
-        type="submit"
-        disabled={isPending}
-        className="w-full rounded-md bg-accent text-contrast text-sm font-medium px-4 py-2.5 hover:opacity-90 transition-opacity duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {isPending ? 'Saving…' : isEdit ? 'Save changes' : 'Log find'}
-      </button>
-
-      {isEdit ? (
-        <button
-          type="button"
-          onClick={handleDelete}
-          disabled={isPending}
-          className="w-full text-sm text-text-secondary hover:text-error transition-colors duration-150 disabled:opacity-50"
-        >
-          Delete find
-        </button>
+      {step === 'account' ? (
+        <>
+          <button
+            type="submit"
+            disabled={isPending}
+            className="w-full rounded-md bg-accent text-contrast text-sm font-medium px-4 py-2.5 hover:opacity-90 transition-opacity duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isPending ? 'Submitting…' : 'Submit find and request account'}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setStep('find'); setError(null) }}
+            className="w-full text-sm text-center text-text-secondary hover:text-text-primary transition-colors duration-150"
+          >
+            Back
+          </button>
+        </>
+      ) : !isAuthenticated ? (
+        <>
+          <button
+            type="submit"
+            disabled={isPending}
+            className="w-full rounded-md bg-accent text-contrast text-sm font-medium px-4 py-2.5 hover:opacity-90 transition-opacity duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isPending ? 'Submitting…' : 'Log anonymously'}
+          </button>
+          <button
+            type="button"
+            onClick={handleRequestAccount}
+            disabled={isPending}
+            className="w-full rounded-md border border-border bg-surface text-text-primary text-sm font-medium px-4 py-2.5 hover:border-accent transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Log and request an account
+          </button>
+          <Link
+            href="/"
+            className="w-full text-sm text-center text-text-secondary hover:text-text-primary transition-colors duration-150"
+          >
+            Cancel
+          </Link>
+        </>
       ) : (
-        <Link
-          href="/"
-          className="w-full text-sm text-center text-text-secondary hover:text-text-primary transition-colors duration-150"
-        >
-          Cancel
-        </Link>
+        <>
+          <button
+            type="submit"
+            disabled={isPending}
+            className="w-full rounded-md bg-accent text-contrast text-sm font-medium px-4 py-2.5 hover:opacity-90 transition-opacity duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isPending ? 'Saving…' : isEdit ? 'Save changes' : 'Log find'}
+          </button>
+          {isEdit ? (
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={isPending}
+              className="w-full text-sm text-text-secondary hover:text-error transition-colors duration-150 disabled:opacity-50"
+            >
+              Delete find
+            </button>
+          ) : (
+            <Link
+              href="/"
+              className="w-full text-sm text-center text-text-secondary hover:text-text-primary transition-colors duration-150"
+            >
+              Cancel
+            </Link>
+          )}
+        </>
       )}
     </form>
   )

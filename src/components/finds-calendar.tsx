@@ -3,9 +3,9 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { MapPin } from "lucide-react";
-import { CloverMarker } from "@/components/clover-marker";
 import { markerRotation } from "@/lib/marker-rotation";
-import { computeLuck, luckAddedOnDay, luckToOpacity, luckAddedToMarkerSize } from "@/lib/luck";
+import { computeLuck, luckAddedOnDay, luckToOpacity, luckAddedToCircleDiameterPct, luckAddedToMarkerSize } from "@/lib/luck";
+import { CloverMarker } from "@/components/clover-marker";
 import type { Find, Clover } from "@/types";
 
 interface Props {
@@ -16,18 +16,17 @@ interface Props {
   userId?: string;
 }
 
-function dominantLeafCount(finds: (Find & { clovers: Clover[] })[], date: Date): number {
-  const y = date.getFullYear()
-  const m = date.getMonth()
-  const d = date.getDate()
-  const clovers = finds
-    .filter(f => {
-      const fd = new Date(f.found_at)
-      return fd.getFullYear() === y && fd.getMonth() === m && fd.getDate() === d
-    })
-    .flatMap(f => f.clovers)
-  if (clovers.length === 0) return 4
-  return Math.max(...clovers.map(c => c.leaf_count))
+
+function dominantLeafCount(finds: (Find & { clovers: Clover[] })[], date: Date): number | null {
+  const y = date.getFullYear(), m = date.getMonth(), d = date.getDate()
+  let max: number | null = null
+  finds.forEach(f => {
+    const fd = new Date(f.found_at)
+    if (fd.getFullYear() === y && fd.getMonth() === m && fd.getDate() === d) {
+      f.clovers.forEach(c => { if (max === null || c.leaf_count > max) max = c.leaf_count })
+    }
+  })
+  return max
 }
 
 function MonthLabel({ date, today }: { date: Date; today: Date }) {
@@ -254,6 +253,43 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId }: Props) {
           gap: 'var(--cal-gap)',
         } as React.CSSProperties}
       >
+        {/* Circle pass (desktop) — rendered first so cells sit on top in DOM stacking order */}
+        {colCount > 1 && reversedCells.map((date, i) => {
+          if (!date) return null;
+          const added = luckAddedOnDay(finds, date);
+          if (added <= 0) return null;
+          const diameter = luckAddedToCircleDiameterPct(added);
+          const rowIndex = Math.floor(i / colCount);
+          const colIndex = (i % colCount) + 1;
+          return (
+            <div
+              key={`circle-${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`}
+              className={`day-num-${colIndex} pointer-events-none`}
+              style={{
+                gridRowStart: rowIndex + 1,
+                height: 0,
+                alignSelf: 'center',
+                position: 'relative',
+                overflow: 'visible',
+              }}
+            >
+              <div
+                style={{
+                  position: 'absolute',
+                  width: `${diameter}%`,
+                  aspectRatio: '1',
+                  borderRadius: '50%',
+                  background: 'var(--color-find-circle)',
+                  left: '50%',
+                  top: 0,
+                  transform: 'translate(-50%, -50%)',
+                }}
+              />
+            </div>
+          );
+        })}
+
+        {/* Cell pass — rendered after circles, sits on top */}
         {reversedCells.map((date, i) => {
           const rowIndex = Math.floor(i / colCount);
           const colIndex = (i % colCount) + 1;
@@ -273,9 +309,7 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId }: Props) {
           const luck = Math.round(computeLuck(finds, new Date(date.getFullYear(), date.getMonth(), dayNum, 23, 59, 59)));
           const opacity = luckToOpacity(luck);
           const added = luckAddedOnDay(finds, date);
-          const markerSize = added > 0 ? luckAddedToMarkerSize(added) : 0;
           const leafCount = dominantLeafCount(finds, date);
-          const rotation = markerRotation(`cal-${cellKey}`, 0);
 
           const dayCell = (
             <div
@@ -286,10 +320,38 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId }: Props) {
                 '--day-bg': `color-mix(in srgb, var(--color-accent) ${opacity * 100 * .75}%, var(--color-surface))`,
               } as React.CSSProperties}
             >
-              {luck > 0 && (
-                <span className="day-cell-luck">
-                  {luck}
-                </span>
+              {/* Clover marker */}
+              {leafCount !== null && added > 0 && (
+                <div
+                  className="pointer-events-none"
+                  style={{
+                    position: 'absolute',
+                    width: `${luckAddedToMarkerSize(added) * 100}%`,
+                    aspectRatio: '1',
+                    top: '50%',
+                    left: '50%',
+                    transform: 'translate(-50%, -50%)',
+                  }}
+                >
+                  <CloverMarker leafCount={leafCount} rotation={markerRotation(cellKey, 0)} filled />
+                </div>
+              )}
+
+              {/* Mobile circle — inside cell so it auto-places correctly with its row */}
+              {colCount === 1 && added > 0 && (
+                <div
+                  className="pointer-events-none"
+                  style={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    width: `${luckAddedToCircleDiameterPct(added)}%`,
+                    aspectRatio: '1',
+                    borderRadius: '50%',
+                    background: 'color-mix(in srgb, var(--color-find-circle) 50%, transparent)',
+                  }}
+                />
               )}
 
               <span className={['day-cell-label', (isToday || dayNum === 1) && 'notable'].filter(Boolean).join(' ')}>
@@ -297,15 +359,6 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId }: Props) {
                   ? `${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][date.getMonth()]} 1`
                   : dayNum}
               </span>
-
-              {markerSize > 0 && (
-                <div
-                  className="absolute inset-0 flex items-center justify-center"
-                  style={{ padding: `${((1 - markerSize) / 2) * 100}%` }}
-                >
-                  <CloverMarker leafCount={leafCount} rotation={rotation} />
-                </div>
-              )}
             </div>
           );
 

@@ -10,6 +10,7 @@ interface CloverMarkerProps {
   active?: boolean
   dragging?: boolean
   spinning?: boolean
+  filled?: boolean
   onMouseDown?: (e: React.MouseEvent<SVGPathElement>) => void
 }
 
@@ -20,6 +21,7 @@ export function CloverMarker({
   active = false,
   dragging = false,
   spinning = false,
+  filled = false,
   onMouseDown,
 }: CloverMarkerProps) {
   const groupRef = useRef<SVGGElement>(null)
@@ -104,8 +106,8 @@ export function CloverMarker({
       <g style={{ transform: `rotate(${rotation}deg)`, transformOrigin: '50% 50%' }}>
         <g ref={groupRef} style={{ transformOrigin: '50% 50%' }}>
           {/* Hit-test area: transparent fill so only the inside of the clover responds */}
-          <path d={d} fill="transparent" style={{ pointerEvents: 'fill', cursor: onMouseDown ? 'grab' : 'default' }} onMouseDown={onMouseDown} />
-          <path d={d} fill="none" stroke="white" strokeWidth="5" strokeLinejoin="round" style={{ pointerEvents: 'none' }} />
+          <path d={d} fill={filled ? 'var(--color-clover-marker)' : 'transparent'} style={{ pointerEvents: 'fill', cursor: onMouseDown ? 'grab' : 'default' }} onMouseDown={onMouseDown} />
+          {!filled && <path d={d} fill="none" stroke="white" strokeWidth="5" strokeLinejoin="round" style={{ pointerEvents: 'none' }} />}
         </g>
       </g>
       {label && (

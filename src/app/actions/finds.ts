@@ -2,6 +2,7 @@
 
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase-server'
+import { createAdminClient } from '@/lib/supabase-admin'
 
 export async function createFind(formData: FormData): Promise<{ error: string } | never> {
   const supabase = await createClient()
@@ -57,6 +58,14 @@ export async function createFind(formData: FormData): Promise<{ error: string } 
   const { data: urlData } = supabase.storage.from('finds').getPublicUrl(storagePath)
   const photoUrl = urlData.publicUrl
 
+  const { data: userProfile } = await supabase
+    .from('users')
+    .select('trusted')
+    .eq('id', user.id)
+    .single()
+
+  const status = userProfile?.trusted ? 'approved' : 'pending'
+
   const { data: find, error: findError } = await supabase
     .from('finds')
     .insert({
@@ -68,6 +77,7 @@ export async function createFind(formData: FormData): Promise<{ error: string } 
       location_privacy: locationPrivacy,
       location_name: locationName || null,
       notes: notes || null,
+      status,
     })
     .select('id')
     .single()
@@ -269,4 +279,184 @@ export async function deleteFind(findId: string): Promise<{ error: string } | ne
   }
 
   redirect('/')
+}
+
+function parseFindFormData(formData: FormData) {
+  const foundAt = formData.get('found_at') as string
+  const lat = formData.get('lat') as string | null
+  const lng = formData.get('lng') as string | null
+  const locationPrivacy = (formData.get('location_privacy') as string) || 'public'
+  const locationName = formData.get('location_name') as string | null
+  const notes = formData.get('notes') as string | null
+  const leafCountsRaw = formData.get('leaf_counts') as string
+  const annotationsRaw = formData.get('annotations') as string | null
+
+  const leafCounts: number[] = JSON.parse(leafCountsRaw)
+  const annotations: ({ x: number; y: number; radius?: number; rotation?: number } | null)[] =
+    annotationsRaw ? JSON.parse(annotationsRaw) : leafCounts.map(() => null)
+
+  return { foundAt, lat, lng, locationPrivacy, locationName, notes, leafCounts, annotations }
+}
+
+async function uploadFindPhoto(
+  storage: { from: (bucket: string) => { upload: (path: string, file: File, opts: object) => Promise<{ error: { message: string } | null }>; getPublicUrl: (path: string) => { data: { publicUrl: string } }; remove: (paths: string[]) => Promise<unknown> } },
+  folder: string,
+  file: File
+): Promise<{ url: string; path: string } | { error: string }> {
+  const ext = file.name.split('.').pop() ?? 'jpg'
+  const random = Math.random().toString(36).slice(2, 8)
+  const storagePath = `${folder}/${Date.now()}-${random}.${ext}`
+  const { error } = await storage.from('finds').upload(storagePath, file, { contentType: file.type })
+  if (error) return { error: `Couldn't upload photo — ${error.message}` }
+  const { data } = storage.from('finds').getPublicUrl(storagePath)
+  return { url: data.publicUrl, path: storagePath }
+}
+
+export async function createAnonymousFind(formData: FormData): Promise<{ error: string } | never> {
+  const supabase = await createClient()
+
+  const photoFile = formData.get('photoFile') as File | null
+  if (!photoFile || photoFile.size === 0) return { error: 'A photo is required.' }
+
+  const foundAt = formData.get('found_at') as string
+  if (!foundAt) return { error: 'Date and time found is required.' }
+
+  let parsed: ReturnType<typeof parseFindFormData>
+  try {
+    parsed = parseFindFormData(formData)
+  } catch {
+    return { error: 'Invalid clover data.' }
+  }
+
+  const upload = await uploadFindPhoto(supabase.storage, 'anonymous', photoFile)
+  if ('error' in upload) return upload
+
+  // Generate ID client-side so we can insert clovers without needing a RETURNING clause.
+  // RETURNING is filtered by the SELECT policy (pending rows aren't visible), which causes
+  // a spurious RLS error when using .select().single() after insert.
+  const findId = crypto.randomUUID()
+
+  const { error: findError } = await supabase
+    .from('finds')
+    .insert({
+      id: findId,
+      user_id: null,
+      found_at: new Date(parsed.foundAt).toISOString(),
+      photo_url: upload.url,
+      lat: parsed.lat ? parseFloat(parsed.lat) : null,
+      lng: parsed.lng ? parseFloat(parsed.lng) : null,
+      location_privacy: parsed.locationPrivacy,
+      location_name: parsed.locationName || null,
+      notes: parsed.notes || null,
+      status: 'pending',
+    })
+
+  if (findError) {
+    await supabase.storage.from('finds').remove([upload.path])
+    return { error: `Couldn't save your find — ${findError.message}` }
+  }
+
+  const cloverRows = parsed.leafCounts.map((count, i) => ({
+    find_id: findId,
+    leaf_count: count,
+    annotation_x: parsed.annotations[i]?.x ?? null,
+    annotation_y: parsed.annotations[i]?.y ?? null,
+    annotation_radius: parsed.annotations[i]?.radius ?? null,
+    annotation_rotation: parsed.annotations[i]?.rotation != null
+      ? ((parsed.annotations[i]!.rotation! % 360) + 360) % 360
+      : null,
+  }))
+
+  await supabase.from('clovers').insert(cloverRows)
+
+  redirect('/finds/submitted')
+}
+
+export async function createFindAndRequestAccount(formData: FormData): Promise<{ error: string } | never> {
+  const supabase = await createClient()
+  const admin = createAdminClient()
+
+  const username = (formData.get('username') as string).trim()
+  const email = (formData.get('email') as string).trim()
+  const password = formData.get('password') as string
+
+  if (!username) return { error: 'Username is required.' }
+  if (!email) return { error: 'Email is required.' }
+  if (!password) return { error: 'Password is required.' }
+
+  const photoFile = formData.get('photoFile') as File | null
+  if (!photoFile || photoFile.size === 0) return { error: 'A photo is required.' }
+
+  const foundAt = formData.get('found_at') as string
+  if (!foundAt) return { error: 'Date and time found is required.' }
+
+  let parsed: ReturnType<typeof parseFindFormData>
+  try {
+    parsed = parseFindFormData(formData)
+  } catch {
+    return { error: 'Invalid clover data.' }
+  }
+
+  const { data: existingUser } = await supabase
+    .from('users')
+    .select('id')
+    .eq('username', username)
+    .maybeSingle()
+  if (existingUser) return { error: 'Username is already taken.' }
+
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
+  const { data: authData, error: authError } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: { username },
+      emailRedirectTo: `${siteUrl}/auth/callback`,
+    },
+  })
+
+  if (authError || !authData.user) {
+    return { error: authError?.message ?? 'Could not create account.' }
+  }
+
+  const userId = authData.user.id
+
+  const upload = await uploadFindPhoto(admin.storage, userId, photoFile)
+  if ('error' in upload) return upload
+
+  const findId = crypto.randomUUID()
+
+  const { error: findError } = await admin
+    .from('finds')
+    .insert({
+      id: findId,
+      user_id: userId,
+      found_at: new Date(parsed.foundAt).toISOString(),
+      photo_url: upload.url,
+      lat: parsed.lat ? parseFloat(parsed.lat) : null,
+      lng: parsed.lng ? parseFloat(parsed.lng) : null,
+      location_privacy: parsed.locationPrivacy,
+      location_name: parsed.locationName || null,
+      notes: parsed.notes || null,
+      status: 'pending',
+    })
+
+  if (findError) {
+    await admin.storage.from('finds').remove([upload.path])
+    return { error: `Couldn't save your find — ${findError.message}` }
+  }
+
+  const cloverRows = parsed.leafCounts.map((count, i) => ({
+    find_id: findId,
+    leaf_count: count,
+    annotation_x: parsed.annotations[i]?.x ?? null,
+    annotation_y: parsed.annotations[i]?.y ?? null,
+    annotation_radius: parsed.annotations[i]?.radius ?? null,
+    annotation_rotation: parsed.annotations[i]?.rotation != null
+      ? ((parsed.annotations[i]!.rotation! % 360) + 360) % 360
+      : null,
+  }))
+
+  await admin.from('clovers').insert(cloverRows)
+
+  redirect('/auth/confirm')
 }

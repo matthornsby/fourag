@@ -1,6 +1,6 @@
 # Fourag
 
-Fourag is a public field journal for logging four-leaf (and more-leaf)clover finds. It's also a personal experiment in agentic design and development — most of the code was written collaboratively with Claude.
+Fourag is a public field journal for logging four-leaf (and more-leaf) clover finds. It's also a personal experiment in agentic design and development — most of the code was written collaboratively with Claude.
 
 ---
 

@@ -32,7 +32,8 @@ export async function proxy(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
-  const isProtectedRoute = pathname.startsWith("/account");
+  const isProtectedRoute =
+    pathname.startsWith("/account") && pathname !== "/account/finds/new";
   const isAuthRoute = pathname.startsWith("/auth");
 
   if (isProtectedRoute && !user) {

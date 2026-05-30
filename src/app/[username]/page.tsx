@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase-server";
 import { FindsCalendar } from "@/components/finds-calendar";
@@ -38,14 +39,24 @@ export default async function UserProfilePage({ params }: PageProps) {
   const typedFinds = (finds ?? []) as (Find & { clovers: Clover[] })[];
 
   return (
-    <main className="flex-1">
+    <main className="flex-1" style={{ overflowY: 'clip' }}>
       <div className="mx-auto max-w-(--width-main-max) px-4 sm:px-6 py-8 flex flex-col gap-6">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-xl font-semibold text-text-primary">
-            {pageHeading(typedProfile.username, isOwner)}
-          </h1>
-          {typedProfile.bio && (
-            <p className="text-sm text-text-secondary">{typedProfile.bio}</p>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-col gap-1">
+            <h1 className="text-xl font-semibold text-text-primary">
+              {pageHeading(typedProfile.username, isOwner)}
+            </h1>
+            {typedProfile.bio && (
+              <p className="text-sm text-text-secondary">{typedProfile.bio}</p>
+            )}
+          </div>
+          {isOwner && (
+            <Link
+              href="/account/profile"
+              className="shrink-0 text-sm text-text-secondary hover:text-text-primary transition-colors duration-150"
+            >
+              Edit profile
+            </Link>
           )}
         </div>
 

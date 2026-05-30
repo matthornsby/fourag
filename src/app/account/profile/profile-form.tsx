@@ -1,0 +1,127 @@
+'use client'
+
+import { useActionState, useRef, useState } from 'react'
+import { updateProfile } from '@/app/actions/profile'
+import type { UserProfile } from '@/types'
+
+type ProfileState = { ok: true } | { ok: false; error: string } | null
+
+interface ProfileFormProps {
+  profile: UserProfile
+}
+
+export function ProfileForm({ profile }: ProfileFormProps) {
+  const [state, action, pending] = useActionState<ProfileState, FormData>(updateProfile, null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(profile.avatar_url)
+  const [avatarFile, setAvatarFile] = useState<File | null>(null)
+
+  const inputClass =
+    'w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent'
+  const labelClass = 'block text-sm font-medium text-text-primary mb-1.5'
+
+  const initials = profile.username.slice(0, 2).toUpperCase()
+
+  function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setAvatarFile(file)
+    setAvatarPreview(URL.createObjectURL(file))
+  }
+
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const formData = new FormData(e.currentTarget)
+    if (avatarFile) {
+      formData.set('avatarFile', avatarFile)
+    }
+    action(formData)
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+
+      {/* Avatar */}
+      <div className="flex flex-col gap-2">
+        <span className={labelClass}>Photo</span>
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="relative shrink-0 w-16 h-16 rounded-full overflow-hidden border-2 border-border hover:border-accent transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-accent"
+            aria-label="Change profile photo"
+          >
+            {avatarPreview ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={avatarPreview}
+                alt=""
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <span className="flex items-center justify-center w-full h-full bg-surface text-text-secondary text-sm font-medium">
+                {initials}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="text-sm text-text-secondary hover:text-text-primary underline underline-offset-2 transition-colors duration-150"
+          >
+            {avatarPreview ? 'Change photo' : 'Add photo'}
+          </button>
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="sr-only"
+          onChange={handleAvatarChange}
+        />
+      </div>
+
+      {/* Username — read-only */}
+      <div>
+        <label htmlFor="username" className={labelClass}>Username</label>
+        <input
+          id="username"
+          type="text"
+          value={profile.username}
+          readOnly
+          className={`${inputClass} opacity-50 cursor-default`}
+        />
+      </div>
+
+      {/* Bio */}
+      <div>
+        <label htmlFor="bio" className={labelClass}>Bio</label>
+        <textarea
+          id="bio"
+          name="bio"
+          rows={3}
+          maxLength={200}
+          defaultValue={profile.bio ?? ''}
+          placeholder="A short note about yourself"
+          className={`${inputClass} resize-none`}
+        />
+      </div>
+
+      {state && !state.ok && (
+        <p role="alert" className="text-sm text-error">{state.error}</p>
+      )}
+      {state?.ok && (
+        <p className="text-sm text-accent">Saved.</p>
+      )}
+
+      <button
+        type="submit"
+        disabled={pending}
+        className="self-start inline-flex items-center rounded-md bg-accent text-contrast text-sm font-medium px-4 py-2 hover:opacity-90 transition-opacity duration-150 disabled:opacity-50"
+      >
+        {pending ? 'Saving…' : 'Save'}
+      </button>
+
+    </form>
+  )
+}

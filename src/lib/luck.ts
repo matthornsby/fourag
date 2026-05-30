@@ -39,3 +39,13 @@ export function luckToOpacity(luck: number): number {
 export function luckAddedToMarkerSize(luckAdded: number): number {
   return Math.min(0.85, 0.35 + Math.sqrt(luckAdded) * 0.015)
 }
+
+// Scaling coefficient for find circles — adjust to tune circle growth rate.
+export const FIND_CIRCLE_SCALE = 1.0
+
+// Returns the circle diameter as a percentage of cell width.
+// Area scales linearly with luckAdded so that equal finds produce equal visual weight.
+// At luckAdded=100 (one 4-leaf clover) the radius equals one cell width (diameter=200%).
+export function luckAddedToCircleDiameterPct(luckAdded: number): number {
+  return 200 * FIND_CIRCLE_SCALE * Math.sqrt(luckAdded / 100) + (luckAdded / 2)
+}

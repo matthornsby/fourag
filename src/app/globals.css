@@ -11,8 +11,10 @@
   --color-accent-light: rgba(0,0,0,.1);
   --color-error: #B91C1C;
   --color-text-contrast: var(--color-text-primary);
+  --color-find-circle:   radial-gradient(closest-side in srgb, color-mix(in srgb, var(--color-accent) 45%, transparent), color-mix(in srgb, var(--color-accent) 25%, transparent));
+  --color-clover-marker: color-mix(in srgb, var(--color-background) 30%, transparent);
 
-  --width-main-max: 1600px;
+  --width-main-max: 1400px;
 
   --wallpaper-gradient-color-1: color-mix(in srgb, #5100FF 40%, var(--color-background));
   --wallpaper-gradient-color-2: color-mix(in srgb, #BAFF46 10%, var(--color-background));;
@@ -21,9 +23,9 @@
 
 /* Light theme token overrides */
 [data-theme="light"] {
-  --color-background: #dededb;
-  --color-surface: rgba(255, 255, 255, .5);
-  --color-border: rgba(0, 0, 0, .12);
+  --color-background: #ffffff;
+  --color-surface: rgba(0,0,0,.15);
+  --color-border: rgba(0, 0, 0, .075);
   --color-text-primary: #001831;
   --color-text-secondary: #78716C;
   --color-accent: #5a9e00;
@@ -116,6 +118,15 @@ body {
   white-space: nowrap;
 }
 
+
+@keyframes fade-in-view {
+  0% {--label-opacity: 0; opacity: 0; transform: translateY(calc(var(--day-cell-y-offset-start) + 100%)) translateX(var(--day-cell-x-offset-start)); scale: 1.2; rotate: var(--day-cell-rotate-start) }
+  30% { opacity: 0;}
+  50% {--label-opacity: 0;}
+  100%   {--label-opacity: 1;  opacity: 1; transform: translateY(0) translateX(0); scale: 1; rotate: 0deg}
+}
+
+
 .day-cell {
   --cell-border-radius: calc(var(--cal-gap) * 1.7);
   @apply relative aspect-square cursor-default overflow-hidden;
@@ -124,21 +135,70 @@ body {
   border-radius: var(--cell-border-radius);
   background-color: var(--day-bg);
 
+  
+  --day-cell-x-offset-base: 140%;
+  --day-cell-y-offset-base: 600%;
+  --day-cell-rotate-base: -35deg;
+  z-index: 0;
+  &.day-num-1{
+    --day-cell-x-offset-start: calc(var(--day-cell-x-offset-base) * -1);
+    --day-cell-y-offset-start: 0%;
+    --day-cell-rotate-start: var(--day-cell-rotate-base); 
+  }
+  &.day-num-2{
+    --day-cell-x-offset-start: calc((var(--day-cell-x-offset-base) * 2/3) * -1);
+    --day-cell-y-offset-start: calc(var(--day-cell-y-offset-base) * 1/3);
+    --day-cell-rotate-start: calc(var(--day-cell-rotate-base) * 2/3);
+  }
+  &.day-num-3{
+    --day-cell-x-offset-start: calc((var(--day-cell-x-offset-base) * 1/3) * -1);
+    --day-cell-y-offset-start: calc(var(--day-cell-y-offset-base) * 2/3);
+    --day-cell-rotate-start: calc(var(--day-cell-rotate-base) * 1/3);
+  }
+  &.day-num-4{
+    --day-cell-x-offset-start: 0;
+    --day-cell-y-offset-start: calc(var(--day-cell-y-offset-base) * 1);
+    --day-cell-rotate-start: 0deg;
+  }
+  &.day-num-5{
+    --day-cell-x-offset-start: calc(var(--day-cell-x-offset-base) * 1/3);
+    --day-cell-y-offset-start: calc(var(--day-cell-y-offset-base) * 2/3);
+    --day-cell-rotate-start: calc((var(--day-cell-rotate-base) * 1/3) * -1); 
+  }
+  &.day-num-6{
+    --day-cell-x-offset-start: calc(var(--day-cell-x-offset-base) * 2/3);
+    --day-cell-y-offset-start: calc(var(--day-cell-y-offset-base) * 1/3);
+    --day-cell-rotate-start: calc((var(--day-cell-rotate-base) * 2/3) * -1); 
+  }
+  &.day-num-7{
+    --day-cell-x-offset-start: calc(var(--day-cell-x-offset-base) * 1);
+    --day-cell-y-offset-start: 0%;
+    --day-cell-rotate-start: calc(var(--day-cell-rotate-base) * -1); 
+  }
+
+  & {
+    animation: fade-in-view linear both;
+    animation-timeline: view(block);
+    animation-range: entry 50% entry 450% ;
+  }
+  
+
   &.weekend {
     clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--chamfer)), calc(100% - var(--chamfer)) 100%, 0 100%);
     /* mask: linear-gradient(-45deg, rgba(0,0,0,.3) var(--chamfer), black var(--chamfer)); */
   }
 
   .day-cell-label {
-    @apply absolute top-0 right-0 leading-none opacity-60 rounded-full;
+    @apply absolute top-0 right-0 leading-none rounded-full;
     font-size: calc(var(--cal-gap) * 2);
     margin: .3em .1em 0 0;
     padding: .3em .5em .4em;
     color: contrast-color(var(--day-bg));
     text-box: trim-both cap alphabetic;
+    opacity: var(--label-opacity);
 
     &.notable {
-      @apply opacity-100 font-semibold;
+      @apply  font-semibold;
     }
   }
 
@@ -148,18 +208,6 @@ body {
     margin-right: .3em;
   }
 
-  .day-cell-luck {
-    @apply absolute inset-0 z-10 flex items-center justify-center text-xs font-semibold;
-    opacity: 0;
-    transition: opacity 150ms;
-    border-radius: inherit;
-    background-color: rgb(0 16 33 / 75%);
-    color: var(--color-accent);
-  }
-
-  &:hover .day-cell-luck {
-    opacity: 1;
-  }
 }
 
 /* ─── Mobile calendar layout (< 768px) ───────────────────────────────────── */
@@ -203,19 +251,26 @@ body {
     width: calc(100lvw - 6rem + (var(--spacing) * 6));
     transform: translateX( calc((var(--spacing) * -6 ) - 18lvw) );
   }
-  .cal-grid{
+  /* .cal-grid{
       transform: translateX(calc(var(--spacing) * 6 ));
       max-width: 7rem;
       flex: auto;
       align-self: flex-end;
       margin-left: auto;
-  }
+  } */
 
 
-  /* Fixed height replaces aspect-square */
+  /* Fixed height replaces aspect-square; overflow visible lets circles extend beyond column */
   .day-cell {
     aspect-ratio: auto;
     height: 1.5rem;
+    overflow: visible !important;
+    width: 3.5rem;
+    margin-left: auto;
+
+    .day-cell-label{
+      font-size: .75rem;
+    }
   }
 
   /* Hide blank padding cells; month labels stay visible */
