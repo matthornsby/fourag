@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase-server'
 import { FindForm } from '@/components/find-form'
+import { SHARE_A_FIND } from '@/lib/constants'
 
 export default async function NewFindPage() {
   const supabase = await createClient()
@@ -21,7 +22,7 @@ export default async function NewFindPage() {
           </div>
         )}
         <div>
-          <h1 className="text-2xl font-semibold mb-1">Log a find</h1>
+          <h1 className="text-2xl font-semibold mb-1">{SHARE_A_FIND}</h1>
           <p className="text-sm text-text-secondary mb-8">
             Record a clover you&apos;ve found — photo, date, and leaf count.
           </p>

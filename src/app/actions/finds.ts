@@ -9,7 +9,7 @@ export async function createFind(formData: FormData): Promise<{ error: string } 
 
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   if (authError || !user) {
-    return { error: 'You must be signed in to log a find.' }
+    return { error: 'You must be signed in to share a find.' }
   }
 
   const photoFile = formData.get('photoFile') as File | null
@@ -119,7 +119,7 @@ export async function updateFind(findId: string, formData: FormData): Promise<{ 
 
   const { data: existingFind, error: fetchError } = await supabase
     .from('finds')
-    .select('id, user_id, photo_url')
+    .select('id, user_id, photo_url, users(username)')
     .eq('id', findId)
     .single()
 
@@ -235,7 +235,9 @@ export async function updateFind(findId: string, formData: FormData): Promise<{ 
     await supabase.from('clovers').delete().in('id', existingIds)
   }
 
-  redirect(`/finds/${findId}`)
+  const usersData = existingFind.users as unknown as { username: string } | { username: string }[] | null
+  const username = Array.isArray(usersData) ? usersData[0]?.username : usersData?.username
+  redirect(username ? `/${username}/finds/${findId}` : `/find/${findId}`)
 }
 
 export async function deleteFind(findId: string): Promise<{ error: string } | never> {
@@ -367,9 +369,14 @@ export async function createAnonymousFind(formData: FormData): Promise<{ error: 
       : null,
   }))
 
-  await supabase.from('clovers').insert(cloverRows)
+  const admin = createAdminClient()
+  const { error: cloversError } = await admin.from('clovers').insert(cloverRows)
 
-  redirect('/finds/submitted')
+  if (cloversError) {
+    return { error: `Couldn't record clover details — ${cloversError.message}` }
+  }
+
+  redirect('/find/submitted')
 }
 
 export async function createFindAndRequestAccount(formData: FormData): Promise<{ error: string } | never> {

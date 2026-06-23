@@ -1,4 +1,5 @@
 export type LocationPrivacy = "public" | "approximate" | "private";
+export type PronounPreference = "neutral" | "masculine" | "feminine" | "none";
 export type FindStatus = "pending" | "approved" | "disputed" | "rejected";
 
 export interface Find {
@@ -14,6 +15,7 @@ export interface Find {
   status: FindStatus;
   created_at: string;
   clovers?: Clover[];
+  users?: { username: string } | null;
 }
 
 export interface Clover {
@@ -33,4 +35,5 @@ export interface UserProfile {
   bio: string | null;
   trusted: boolean;
   created_at: string;
+  pronouns: PronounPreference;
 }

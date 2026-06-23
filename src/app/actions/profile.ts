@@ -16,6 +16,10 @@ export async function updateProfile(
   }
 
   const bio = (formData.get('bio') as string).trim() || null
+  const pronounsRaw = formData.get('pronouns') as string
+  const pronouns = ['neutral', 'masculine', 'feminine', 'none'].includes(pronounsRaw)
+    ? pronounsRaw
+    : 'neutral'
   const avatarFile = formData.get('avatarFile') as File | null
 
   let avatarUrl: string | undefined
@@ -54,7 +58,7 @@ export async function updateProfile(
     }
   }
 
-  const updates: { bio: string | null; avatar_url?: string } = { bio }
+  const updates: { bio: string | null; avatar_url?: string; pronouns: string } = { bio, pronouns }
   if (avatarUrl) updates.avatar_url = avatarUrl
 
   const { error } = await supabase.from('users').update(updates).eq('id', user.id)

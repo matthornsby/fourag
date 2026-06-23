@@ -1,5 +1,6 @@
 'use client'
 
+import { notFound } from 'next/navigation'
 import { useState } from 'react'
 
 // ── path generator (same logic as clover-marker.tsx, but with tunable params) ──
@@ -102,6 +103,7 @@ function Slider({
 }
 
 export default function CloverDebugPage() {
+  if (process.env.NODE_ENV !== 'development') notFound()
   const [k,           setK]           = useState(0.127)
   const [hLobeScale,  setHLobeScale]  = useState(1.0)
   const [hValleyScale, setHValleyScale] = useState(1.0)

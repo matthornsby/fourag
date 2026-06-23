@@ -42,7 +42,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (isAuthRoute && user) {
+  if (isAuthRoute && user && pathname !== "/auth/reset-password") {
     const url = request.nextUrl.clone();
     url.pathname = "/";
     return NextResponse.redirect(url);

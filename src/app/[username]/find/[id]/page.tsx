@@ -1,36 +1,65 @@
+import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase-server";
 import { FindsCalendar } from "@/components/finds-calendar";
-import { FINDS_TERM } from "@/lib/constants";
 import { UserAvatar } from "@/components/user-avatar";
+import { FINDS_TERM } from "@/lib/constants";
 import { computeLuckEndDate } from "@/lib/luck";
 import { luckSentence, cloverProfileSentence } from "@/lib/pronouns";
 import type { Find, Clover, UserProfile } from "@/types";
 
-interface PageProps {
-  params: Promise<{ username: string }>;
-  searchParams: Promise<{ find?: string }>;
+const LEAF_NAMES: Record<number, string> = {
+  3: 'three-leaf', 4: 'four-leaf', 5: 'five-leaf', 6: 'six-leaf', 7: 'seven-leaf',
+};
+const ONES = ['zero','one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve'];
+function numWord(n: number) { return n < ONES.length ? ONES[n] : String(n); }
+function leafName(n: number) { return LEAF_NAMES[n] ?? `${n}-leaf`; }
+
+function cloverTitle(clovers: { leaf_count: number }[]): string {
+  const freq = new Map<number, number>();
+  for (const c of clovers) freq.set(c.leaf_count, (freq.get(c.leaf_count) ?? 0) + 1);
+  const groups = Array.from(freq.entries()).sort((a, b) => b[0] - a[0]);
+  const parts = groups.map(([count, num]) =>
+    `${num === 1 ? 'a' : numWord(num)} ${leafName(count)} ${num === 1 ? 'clover' : 'clovers'}`
+  );
+  if (!parts.length) return 'a clover';
+  if (parts.length === 1) return parts[0];
+  return parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1];
+}
+
+function timeOfDay(dateStr: string) {
+  const h = new Date(dateStr).getHours();
+  if (h >= 5 && h < 12) return 'morning';
+  if (h >= 12 && h < 17) return 'afternoon';
+  if (h >= 17 && h < 21) return 'evening';
+  return 'night';
+}
+
+function formatDate(dateStr: string) {
+  return new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' }).format(new Date(dateStr));
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  const { username } = await params;
+  const { username, id } = await params;
   const supabase = await createClient();
 
-  const { data: profile } = await supabase
-    .from("users").select("id, username, bio, avatar_url").ilike("username", username).single();
+  const [{ data: profile }, { data: find }] = await Promise.all([
+    supabase.from("users").select("username").ilike("username", username).single(),
+    supabase.from("finds")
+      .select("photo_url, found_at, location_name, location_privacy, clovers(leaf_count)")
+      .eq("id", id)
+      .single(),
+  ]);
 
-  if (!profile) return {};
+  if (!profile || !find || find.location_privacy === 'private') return {};
 
-  const { data: recentFind } = await supabase
-    .from("finds").select("photo_url").eq("user_id", profile.id)
-    .order("found_at", { ascending: false }).limit(1).single();
-
-  const displayName = profile.username.charAt(0).toUpperCase() + profile.username.slice(1);
-  const title = `${displayName}'s ${FINDS_TERM.charAt(0).toUpperCase() + FINDS_TERM.slice(1)} ✤ Fourag`;
-  const description = profile.bio ?? `${displayName}'s clover finds on Fourag.`;
-  const image = profile.avatar_url ?? recentFind?.photo_url ?? null;
+  const displayName = profile.username.toLowerCase() === 'anonymous' ? 'Someone' : profile.username.charAt(0).toUpperCase() + profile.username.slice(1);
+  const clovers = (find.clovers ?? []) as { leaf_count: number }[];
+  const title = `${displayName} found ${cloverTitle(clovers)} ✤ Fourag`;
+  const tod = timeOfDay(find.found_at);
+  const date = formatDate(find.found_at);
+  const description = `${displayName} found ${cloverTitle(clovers)}${find.location_name ? ` in ${find.location_name}` : ''} on the ${tod} of ${date}.`;
 
   return {
     title,
@@ -38,29 +67,39 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     openGraph: {
       title,
       description,
-      images: image ? [{ url: image }] : [],
+      images: find.photo_url ? [{ url: find.photo_url }] : [],
     },
   };
 }
 
+interface PageProps {
+  params: Promise<{ username: string; id: string }>;
+}
+
 function pageHeading(username: string, isOwner: boolean): string {
   if (isOwner) return `Your ${FINDS_TERM}`;
-  const possessive = username.endsWith("s") ? `${username}’` : `${username}’s`;
+  const possessive = username.endsWith("s") ? `${username}'` : `${username}'s`;
   return `${possessive} ${FINDS_TERM.charAt(0).toUpperCase()}${FINDS_TERM.slice(1)}`;
 }
 
-export default async function UserProfilePage({ params, searchParams }: PageProps) {
-  const { username } = await params;
-  const { find: initialFindId } = await searchParams;
-  if (username !== username.toLowerCase()) redirect(`/${username.toLowerCase()}`);
-  const supabase = await createClient();
+export default async function UserFindPage({ params }: PageProps) {
+  const { username, id } = await params;
+  const lower = username.toLowerCase();
+  if (username !== lower) redirect(`/${lower}/find/${id}`);
 
-  const [{ data: profile }, { data: { user } }] = await Promise.all([
+  const supabase = await createClient();
+  const [{ data: profile }, { data: { user } }, { data: find }] = await Promise.all([
     supabase.from("users").select("*").ilike("username", username).single(),
     supabase.auth.getUser(),
+    supabase.from("finds").select("id, location_privacy, user_id").eq("id", id).single(),
   ]);
 
   if (!profile) notFound();
+  if (!find) redirect(`/${lower}`);
+
+  if (find.location_privacy === "private" && (!user || user.id !== find.user_id)) {
+    redirect(`/${lower}`);
+  }
 
   const typedProfile = profile as UserProfile;
   const isOwner = user?.id === typedProfile.id;
@@ -76,9 +115,6 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
 
   const luckEndDate = computeLuckEndDate(typedFinds);
   const luckExpired = luckEndDate ? new Date(luckEndDate) < new Date() : false;
-  const possessive = typedProfile.username.endsWith('s')
-    ? `${typedProfile.username}’`
-    : `${typedProfile.username}’s`;
   const luckDateStr = luckEndDate
     ? new Date(luckEndDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
     : null;
@@ -109,14 +145,14 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     : null;
 
   const profileHeader = (
-    <div className="flex flex-col gap-3 px-5 sm:px-7 py-6 items-center">
+    <div className="flex flex-col gap-3 px-10 py-6 items-center">
       <UserAvatar username={typedProfile.username} avatarUrl={typedProfile.avatar_url} />
       <div className="flex flex-col gap-3 text-balance text-center">
         <h1 className="text-4xl font-semibold text-text-primary text-serif">
           {pageHeading(typedProfile.username, isOwner)}
         </h1>
         {typedProfile.bio && (
-          <p className="text-base sm:text-lg text-text-secondary">{typedProfile.bio}</p>
+          <p className="text-base text-text-secondary">{typedProfile.bio}</p>
         )}
         {totalClovers > 0 && sinceStr && bestCloverFind && bestCloverDateStr && (
           <p className="text-base text-text-secondary">
@@ -136,16 +172,15 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
         )}
         {isOwner && (
           <p>
-        <Link
-          href="/account/profile"
-          className="self-start text-sm button button-secondary text-center hover:text-text-primary transition-colors duration-150"
-        >
-          Edit your profile details
-        </Link>
-        </p>
-      )}
+            <Link
+              href="/account/profile"
+              className="self-start text-sm button button-secondary text-center hover:text-text-primary transition-colors duration-150"
+            >
+              Edit your profile details
+            </Link>
+          </p>
+        )}
       </div>
-      
     </div>
   );
 
@@ -155,12 +190,17 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
         {typedFinds.length === 0 ? (
           <>
             {profileHeader}
-            <p className="text-sm text-text-secondary py-8 text-center">
-              No {FINDS_TERM} yet.
-            </p>
+            <p className="text-sm text-text-secondary py-8 text-center">No {FINDS_TERM} yet.</p>
           </>
         ) : (
-          <FindsCalendar finds={typedFinds} userId={user?.id} username={typedProfile.username} basePath={`/${typedProfile.username}`} header={profileHeader} initialFindId={initialFindId} />
+          <FindsCalendar
+            finds={typedFinds}
+            userId={user?.id}
+            username={typedProfile.username}
+            basePath={`/${lower}`}
+            header={profileHeader}
+            initialFindId={id}
+          />
         )}
       </div>
     </main>

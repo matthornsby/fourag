@@ -1,9 +1,14 @@
-import Link from "next/link";
+import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase-server";
-import { FindsCalendar } from "@/components/finds-calendar";
-import { LuckIndicator } from "@/components/luck-indicator";
-import { FINDS_TERM } from "@/lib/constants";
-import type { Find, Clover } from "@/types";
+import { HomepageContent } from "@/components/homepage-content";
+import { computeLuckEndDate } from "@/lib/luck";
+import type { Find, Clover, UserProfile } from "@/types";
+import { SITE_TAGLINE } from "@/lib/constants";
+
+export const metadata: Metadata = {
+  title: `✤ Fourag: ${SITE_TAGLINE}`,
+  description: "Fourag is a public patch for spreading the serendipity of four-leaf (or even more-leaf) clovers.",
+};
 
 export default async function Home() {
   const supabase = await createClient();
@@ -23,53 +28,66 @@ export default async function Home() {
 
   const typedFinds = (finds ?? []) as (Find & { clovers: Clover[] })[];
 
-  const userFinds = user
-    ? typedFinds.filter((f) => f.user_id === user.id)
-    : [];
+  // 2 most recent unique users
+  const seenUserIds = new Set<string>();
+  const recentUserIds: string[] = [];
+  for (const find of typedFinds) {
+    if (find.user_id && !seenUserIds.has(find.user_id)) {
+      seenUserIds.add(find.user_id);
+      recentUserIds.push(find.user_id);
+      if (recentUserIds.length === 2) break;
+    }
+  }
+
+  const { data: profileRows } = recentUserIds.length > 0
+    ? await supabase.from("users").select("*").in("id", recentUserIds)
+    : { data: [] };
+
+  const profiles = (profileRows ?? []) as UserProfile[];
+  const sortedProfiles = recentUserIds
+    .map(id => profiles.find(p => p.id === id))
+    .filter(Boolean) as UserProfile[];
+
+  const findsByUser: Record<string, (Find & { clovers: Clover[] })[]> = {};
+  const luckEndDates: Record<string, string | null> = {};
+  for (const profile of sortedProfiles) {
+    const userFinds = typedFinds.filter(f => f.user_id === profile.id);
+    findsByUser[profile.id] = userFinds;
+    luckEndDates[profile.id] = computeLuckEndDate(userFinds);
+  }
+
+  // Append anonymous profile card if there are any approved anonymous finds
+  const anonymousFinds = typedFinds.filter(f => f.user_id === null);
+  if (anonymousFinds.length > 0) {
+    const anonymousProfile: UserProfile = {
+      id: 'anonymous',
+      username: 'anonymous',
+      avatar_url: null,
+      bio: 'Finds shared without an account.',
+      trusted: false,
+      created_at: '',
+    };
+    sortedProfiles.push(anonymousProfile);
+    findsByUser['anonymous'] = anonymousFinds;
+    luckEndDates['anonymous'] = computeLuckEndDate(anonymousFinds);
+  }
+
+  const heroFinds = typedFinds.slice(0, 6);
+
+  const mappableFinds = typedFinds
+    .filter(f => f.lat !== null && f.lng !== null)
+    .slice(0, 50);
 
   return (
-    <main className="flex-1" style={{ overflowY: 'clip' }}>
-      <div className="mx-auto max-w-(--width-main-max) px-4 sm:px-6 py-8 flex flex-col gap-6">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <h1 className="text-xl font-semibold text-text-primary">
-              All {FINDS_TERM}
-            </h1>
-            {user && <LuckIndicator finds={userFinds} />}
-          </div>
-          {user && (
-            <Link
-              href="/account/finds/new"
-              className="shrink-0 inline-flex items-center rounded-md bg-accent text-contrast text-sm font-medium px-4 py-2 hover:opacity-90 transition-opacity duration-150"
-            >
-              Log a find
-            </Link>
-          )}
-        </div>
-
-        {typedFinds.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 py-16 text-center">
-            <p className="text-text-secondary text-sm">No {FINDS_TERM} yet.</p>
-            {user ? (
-              <Link
-                href="/account/finds/new"
-                className="text-sm text-accent hover:underline underline-offset-2"
-              >
-                Log a find
-              </Link>
-            ) : (
-              <Link
-                href="/auth/sign-up"
-                className="text-sm text-accent hover:underline underline-offset-2"
-              >
-                Get started
-              </Link>
-            )}
-          </div>
-        ) : (
-          <FindsCalendar finds={typedFinds} userId={user?.id} />
-        )}
-      </div>
+    <main className="flex-1">
+      <HomepageContent
+        userId={user?.id ?? null}
+        heroFinds={heroFinds}
+        profiles={sortedProfiles}
+        findsByUser={findsByUser}
+        luckEndDates={luckEndDates}
+        mappableFinds={mappableFinds}
+      />
     </main>
   );
 }

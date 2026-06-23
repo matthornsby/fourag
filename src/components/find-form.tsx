@@ -34,9 +34,10 @@ function formatCoords(lat: string, lng: string): string {
 interface FindFormProps {
   find?: Find & { clovers: Clover[] }
   isAuthenticated?: boolean
+  updateAction?: (findId: string, formData: FormData) => Promise<{ error: string } | never>
 }
 
-export function FindForm({ find, isAuthenticated = true }: FindFormProps) {
+export function FindForm({ find, isAuthenticated = true, updateAction }: FindFormProps) {
   const isEdit = find !== undefined
 
   const [photoFile, setPhotoFile] = useState<File | null>(null)
@@ -183,7 +184,7 @@ export function FindForm({ find, isAuthenticated = true }: FindFormProps) {
 
     startTransition(async () => {
       const result = isEdit
-        ? await updateFind(find.id, buildFindFormData())
+        ? await (updateAction ?? updateFind)(find.id, buildFindFormData())
         : await createFind(buildFindFormData())
       if (result?.error) setError(result.error)
     })
@@ -368,7 +369,7 @@ export function FindForm({ find, isAuthenticated = true }: FindFormProps) {
           <button
             type="submit"
             disabled={isPending}
-            className="w-full rounded-md bg-accent text-contrast text-sm font-medium px-4 py-2.5 hover:opacity-90 transition-opacity duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full button button-primary"
           >
             {isPending ? 'Submitting…' : 'Submit find and request account'}
           </button>
@@ -385,7 +386,7 @@ export function FindForm({ find, isAuthenticated = true }: FindFormProps) {
           <button
             type="submit"
             disabled={isPending}
-            className="w-full rounded-md bg-accent text-contrast text-sm font-medium px-4 py-2.5 hover:opacity-90 transition-opacity duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full button button-primary"
           >
             {isPending ? 'Submitting…' : 'Log anonymously'}
           </button>
@@ -393,7 +394,7 @@ export function FindForm({ find, isAuthenticated = true }: FindFormProps) {
             type="button"
             onClick={handleRequestAccount}
             disabled={isPending}
-            className="w-full rounded-md border border-border bg-surface text-text-primary text-sm font-medium px-4 py-2.5 hover:border-accent transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full button button-secondary"
           >
             Log and request an account
           </button>
@@ -409,9 +410,9 @@ export function FindForm({ find, isAuthenticated = true }: FindFormProps) {
           <button
             type="submit"
             disabled={isPending}
-            className="w-full rounded-md bg-accent text-contrast text-sm font-medium px-4 py-2.5 hover:opacity-90 transition-opacity duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full button button-primary"
           >
-            {isPending ? 'Saving…' : isEdit ? 'Save changes' : 'Log find'}
+            {isPending ? 'Saving…' : isEdit ? 'Save changes' : 'Share this find'}
           </button>
           {isEdit ? (
             <button

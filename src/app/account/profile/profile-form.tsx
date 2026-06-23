@@ -1,8 +1,8 @@
 'use client'
 
-import { useActionState, useRef, useState } from 'react'
+import { useActionState, useRef, useState, useTransition } from 'react'
 import { updateProfile } from '@/app/actions/profile'
-import type { UserProfile } from '@/types'
+import type { UserProfile, PronounPreference } from '@/types'
 
 type ProfileState = { ok: true } | { ok: false; error: string } | null
 
@@ -11,7 +11,8 @@ interface ProfileFormProps {
 }
 
 export function ProfileForm({ profile }: ProfileFormProps) {
-  const [state, action, pending] = useActionState<ProfileState, FormData>(updateProfile, null)
+  const [state, action, isPending] = useActionState<ProfileState, FormData>(updateProfile, null)
+  const [, startTransition] = useTransition()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [avatarPreview, setAvatarPreview] = useState<string | null>(profile.avatar_url)
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
@@ -22,11 +23,35 @@ export function ProfileForm({ profile }: ProfileFormProps) {
 
   const initials = profile.username.slice(0, 2).toUpperCase()
 
+  function resizeImage(file: File, size: number): Promise<File> {
+    return new Promise((resolve) => {
+      const img = new Image()
+      const url = URL.createObjectURL(file)
+      img.onload = () => {
+        URL.revokeObjectURL(url)
+        const canvas = document.createElement('canvas')
+        canvas.width = size
+        canvas.height = size
+        const ctx = canvas.getContext('2d')!
+        const scale = Math.max(size / img.width, size / img.height)
+        const w = img.width * scale
+        const h = img.height * scale
+        ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h)
+        canvas.toBlob(
+          (blob) => resolve(blob ? new File([blob], 'avatar.jpg', { type: 'image/jpeg' }) : file),
+          'image/jpeg',
+          0.9
+        )
+      }
+      img.src = url
+    })
+  }
+
   function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
-    setAvatarFile(file)
     setAvatarPreview(URL.createObjectURL(file))
+    resizeImage(file, 256).then(setAvatarFile)
   }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -35,7 +60,7 @@ export function ProfileForm({ profile }: ProfileFormProps) {
     if (avatarFile) {
       formData.set('avatarFile', avatarFile)
     }
-    action(formData)
+    startTransition(() => action(formData))
   }
 
   return (
@@ -75,7 +100,7 @@ export function ProfileForm({ profile }: ProfileFormProps) {
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*"
+          accept="image/jpeg,image/png,image/gif,image/webp,image/avif,image/heic"
           className="sr-only"
           onChange={handleAvatarChange}
         />
@@ -93,6 +118,21 @@ export function ProfileForm({ profile }: ProfileFormProps) {
         />
       </div>
 
+      {/* Pronouns */}
+      <div>
+        <span className={labelClass}>Pronouns</span>
+        <select
+          name="pronouns"
+          defaultValue={profile.pronouns ?? 'neutral'}
+          className={inputClass}
+        >
+          <option value="neutral">Neutral (They/Their)</option>
+          <option value="masculine">Masculine (He/His)</option>
+          <option value="feminine">Feminine (She/Her)</option>
+          <option value="none">None</option>
+        </select>
+      </div>
+
       {/* Bio */}
       <div>
         <label htmlFor="bio" className={labelClass}>Bio</label>
@@ -107,20 +147,21 @@ export function ProfileForm({ profile }: ProfileFormProps) {
         />
       </div>
 
-      {state && !state.ok && (
-        <p role="alert" className="text-sm text-error">{state.error}</p>
-      )}
-      {state?.ok && (
-        <p className="text-sm text-accent">Saved.</p>
-      )}
-
-      <button
-        type="submit"
-        disabled={pending}
-        className="self-start inline-flex items-center rounded-md bg-accent text-contrast text-sm font-medium px-4 py-2 hover:opacity-90 transition-opacity duration-150 disabled:opacity-50"
-      >
-        {pending ? 'Saving…' : 'Save'}
-      </button>
+      <div className="flex items-center gap-3">
+        <button
+          type="submit"
+          disabled={isPending}
+          className="inline-flex items-center rounded-md bg-accent text-contrast text-sm font-medium px-4 py-2 hover:opacity-90 transition-opacity duration-150 disabled:opacity-50"
+        >
+          {isPending ? 'Saving…' : 'Save'}
+        </button>
+        {state && !state.ok && (
+          <p role="alert" className="text-sm text-error">{state.error}</p>
+        )}
+        {state?.ok && (
+          <p className="text-sm text-accent">Saved.</p>
+        )}
+      </div>
 
     </form>
   )

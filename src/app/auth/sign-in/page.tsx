@@ -51,7 +51,7 @@ export default function SignInPage() {
         </p>
         <p className="text-sm text-text-secondary text-center">
           Don&apos;t have an account?{" "}
-          <a href="/account/finds/new" className="text-accent hover:underline underline-offset-2">Log a find to get started.</a>
+          <a href="/account/finds/new" className="text-accent hover:underline underline-offset-2">Share a find to get started.</a>
         </p>
       </div>
     </main>

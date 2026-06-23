@@ -1,19 +1,19 @@
 import type { Find, Clover } from '@/types'
 
-export const LUCK_DECAY_DAYS = 12
+// Luck units lost per day — tuned so a single 4-leaf clover (100 luck) lasts ~23 days.
+export const LUCK_DECAY_RATE = 100 / 7
 
 export function luckValue(leafCount: number): number {
-  return 100 * Math.pow(2, leafCount - 4)
+  return 100 * Math.pow(3, leafCount - 4)
 }
 
 export function computeLuck(finds: (Find & { clovers: Clover[] })[], atTime: Date): number {
-  return finds
-    .flatMap(f => f.clovers.map(c => ({ foundAt: f.found_at, leafCount: c.leaf_count })))
-    .reduce((sum, { foundAt, leafCount }) => {
-      const daysSince = (atTime.getTime() - new Date(foundAt).getTime()) / 86400000
-      if (daysSince < 0) return sum
-      return sum + luckValue(leafCount) * Math.exp(-daysSince / LUCK_DECAY_DAYS)
-    }, 0)
+  return finds.reduce((sum, find) => {
+    const daysSince = (atTime.getTime() - new Date(find.found_at).getTime()) / 86400000
+    if (daysSince < 0) return sum
+    const findLuck = find.clovers.reduce((s, c) => s + luckValue(c.leaf_count), 0)
+    return sum + Math.max(0, findLuck - LUCK_DECAY_RATE * daysSince)
+  }, 0)
 }
 
 export function luckAddedOnDay(finds: (Find & { clovers: Clover[] })[], date: Date): number {
@@ -48,4 +48,32 @@ export const FIND_CIRCLE_SCALE = 1.0
 // At luckAdded=100 (one 4-leaf clover) the radius equals one cell width (diameter=200%).
 export function luckAddedToCircleDiameterPct(luckAdded: number): number {
   return 200 * FIND_CIRCLE_SCALE * Math.sqrt(luckAdded / 100) + (luckAdded / 2)
+}
+
+
+export function computeLuckEndDate(finds: (Find & { clovers: Clover[] })[]): string | null {
+  if (finds.length === 0) return null;
+  const now = new Date();
+  now.setHours(23, 59, 59, 0);
+
+  if (computeLuck(finds, now) >= 1) {
+    const cursor = new Date(now);
+    for (let i = 0; i < 365; i++) {
+      cursor.setDate(cursor.getDate() + 1);
+      if (computeLuck(finds, cursor) < 1) {
+        cursor.setDate(cursor.getDate() - 1);
+        return cursor.toISOString();
+      }
+    }
+    return null;
+  } else {
+    const cursor = new Date(now);
+    for (let i = 0; i < 365; i++) {
+      cursor.setDate(cursor.getDate() - 1);
+      if (computeLuck(finds, cursor) >= 1) {
+        return cursor.toISOString();
+      }
+    }
+    return null;
+  }
 }

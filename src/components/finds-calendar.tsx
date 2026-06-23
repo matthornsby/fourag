@@ -1,12 +1,68 @@
 'use client'
 
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
-import Link from "next/link";
 import { MapPin } from "lucide-react";
 import { markerRotation } from "@/lib/marker-rotation";
 import { computeLuck, luckAddedOnDay, luckToOpacity, luckAddedToCircleDiameterPct, luckAddedToMarkerSize } from "@/lib/luck";
 import { CloverMarker } from "@/components/clover-marker";
+import { FindCardDialog } from "@/components/find-card-dialog";
 import type { Find, Clover } from "@/types";
+
+// --- Meta helpers ---
+const LEAF_NAMES: Record<number, string> = {
+  3: 'three-leaf', 4: 'four-leaf', 5: 'five-leaf', 6: 'six-leaf', 7: 'seven-leaf',
+};
+const NUM_WORDS = ['zero','one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve'];
+function numWord(n: number) { return n < NUM_WORDS.length ? NUM_WORDS[n] : String(n); }
+function leafName(n: number) { return LEAF_NAMES[n] ?? `${n}-leaf`; }
+function cloverTitle(clovers: Clover[]): string {
+  const freq = new Map<number, number>();
+  for (const c of clovers) freq.set(c.leaf_count, (freq.get(c.leaf_count) ?? 0) + 1);
+  const groups = Array.from(freq.entries()).sort((a, b) => b[0] - a[0]);
+  const parts = groups.map(([count, num]) =>
+    `${num === 1 ? 'a' : numWord(num)} ${leafName(count)} ${num === 1 ? 'clover' : 'clovers'}`
+  );
+  if (!parts.length) return 'a clover';
+  if (parts.length === 1) return parts[0];
+  return parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1];
+}
+function findTimeOfDay(dateStr: string) {
+  const h = new Date(dateStr).getHours();
+  if (h >= 5 && h < 12) return 'morning';
+  if (h >= 12 && h < 17) return 'afternoon';
+  if (h >= 17 && h < 21) return 'evening';
+  return 'night';
+}
+function findFormatDate(dateStr: string) {
+  return new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' }).format(new Date(dateStr));
+}
+
+function getMeta(attr: string, value: string): string {
+  return (document.querySelector(`meta[${attr}="${value}"]`) as HTMLMetaElement | null)?.content ?? '';
+}
+function setMeta(attr: string, value: string, content: string) {
+  let el = document.querySelector(`meta[${attr}="${value}"]`) as HTMLMetaElement | null;
+  if (!el) { el = document.createElement('meta'); el.setAttribute(attr, value); document.head.appendChild(el); }
+  el.content = content;
+}
+
+interface PageMeta { title: string; description: string; ogTitle: string; ogDescription: string; ogImage: string; }
+function capturePageMeta(): PageMeta {
+  return {
+    title: document.title,
+    description: getMeta('name', 'description'),
+    ogTitle: getMeta('property', 'og:title'),
+    ogDescription: getMeta('property', 'og:description'),
+    ogImage: getMeta('property', 'og:image'),
+  };
+}
+function applyPageMeta(meta: PageMeta) {
+  document.title = meta.title;
+  if (meta.description) setMeta('name', 'description', meta.description);
+  if (meta.ogTitle) setMeta('property', 'og:title', meta.ogTitle);
+  if (meta.ogDescription) setMeta('property', 'og:description', meta.ogDescription);
+  if (meta.ogImage) setMeta('property', 'og:image', meta.ogImage);
+}
 
 interface Props {
   finds: (Find & { clovers: Clover[] })[];
@@ -14,6 +70,17 @@ interface Props {
   weekStartsOn?: 0 | 1;
   /** Currently logged-in user id; when set, photo thumbnails link to the edit page for owned finds. */
   userId?: string;
+  /** Username of the profile being viewed, for display in find narratives. */
+  username?: string;
+  /** Open this find's dialog immediately on mount (e.g. when navigating directly to /finds/:id). */
+  initialFindId?: string;
+  /**
+   * URL prefix for find deep-links. Default "" → /finds/{id}.
+   * On a user profile page pass e.g. "/matt" → /matt/finds/{id}.
+   */
+  basePath?: string;
+  /** Optional content rendered above the photo stack in the photo column. */
+  header?: React.ReactNode;
 }
 
 
@@ -77,19 +144,50 @@ function MonthLabel({ date, today }: { date: Date; today: Date }) {
 // px a sentinel must travel above viewport top before its card is fully gone
 const EXIT_DISTANCE = 120;
 
-export function FindsCalendar({ finds, weekStartsOn = 1, userId }: Props) {
+export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initialFindId, basePath = '', header }: Props) {
   const [exitProgress, setExitProgress] = useState<Map<string, number>>(new Map());
   const [orientations, setOrientations] = useState<Record<string, 'landscape' | 'portrait'>>({});
   const [photoSide, setPhotoSide] = useState<'left' | 'right'>('left');
   const [weekStart, setWeekStart] = useState<0 | 1>(weekStartsOn);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [colCount, setColCount] = useState(7);
+  const [selectedFind, setSelectedFind] = useState<(Find & { clovers: Clover[] }) | null>(null);
+  const [sourceRect, setSourceRect] = useState<DOMRect | null>(null);
+  const activeCardRef = useRef<HTMLElement | null>(null);
+  const dialogCloseRef = useRef<(() => void) | null>(null);
+  const origMetaRef = useRef<PageMeta | null>(null);
+
+  // Capture page meta once on mount so it can be restored when a modal closes.
+  useEffect(() => { origMetaRef.current = capturePageMeta(); }, []);
+
+  // Measure actual row height (cell + gap) from the rendered grid for pixel-perfect label alignment.
+  const [cellHeightPx, setCellHeightPx] = useState(0);
+  const [rowGapPx, setRowGapPx] = useState(0);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const probeRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
     const update = () => setColCount(window.innerWidth < 768 ? 1 : 7);
     update();
     window.addEventListener('resize', update);
     return () => window.removeEventListener('resize', update);
+  }, []);
+
+  // Derive exact cell height + row gap from the live grid so month label wrappers align perfectly.
+  useLayoutEffect(() => {
+    const grid = gridRef.current;
+    const probe = probeRef.current;
+    if (!grid || !probe) return;
+    const measure = () => {
+      const cellH = probe.getBoundingClientRect().height;
+      // getComputedStyle resolves clamp() to a px value
+      const gap = parseFloat(getComputedStyle(grid).rowGap) || 0;
+      setCellHeightPx(cellH);
+      setRowGapPx(gap);
+    };
+    const ro = new ResizeObserver(measure);
+    ro.observe(grid);
+    return () => ro.disconnect();
   }, []);
 
   useEffect(() => {
@@ -145,6 +243,62 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId }: Props) {
     return () => window.removeEventListener('scroll', update);
   }, []);
 
+  // Open dialog from URL on mount (direct link or initial URL).
+  useEffect(() => {
+    const escapedBase = basePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const match = window.location.pathname.match(new RegExp(`^${escapedBase}/find/(.+)$`));
+    const id = initialFindId ?? match?.[1];
+    if (!id) return;
+    const find = finds.find(f => f.id === id);
+    if (find) setSelectedFind(find);
+    // No FLIP animation on mount — no source card to animate from.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Close dialog when browser back is pressed (browser already changed the URL).
+  useEffect(() => {
+    const onPopstate = () => { dialogCloseRef.current?.(); };
+    window.addEventListener('popstate', onPopstate);
+    return () => window.removeEventListener('popstate', onPopstate);
+  }, []);
+
+  const openFind = useCallback((find: Find & { clovers: Clover[] }, el: HTMLElement) => {
+    activeCardRef.current = el;
+    setSourceRect(el.getBoundingClientRect());
+    setSelectedFind(find);
+    const slug = find.users?.username ?? basePath.replace(/^\//, '');
+    const findUrl = slug ? `/${slug.toLowerCase()}/find/${find.id}` : `${basePath}/find/${find.id}`;
+    history.pushState({ findId: find.id }, '', findUrl);
+
+    const displayName = !slug || slug === 'anonymous' ? 'Someone' : slug.charAt(0).toUpperCase() + slug.slice(1);
+    const titleText = `${displayName ? displayName + ' found ' : 'Found '}${cloverTitle(find.clovers)} ✤ Fourag`;
+    const tod = findTimeOfDay(find.found_at);
+    const date = findFormatDate(find.found_at);
+    const descText = find.location_name
+      ? `The ${tod} of ${date} in ${find.location_name}.`
+      : `The ${tod} of ${date}.`;
+    document.title = titleText;
+    setMeta('name', 'description', descText);
+    setMeta('property', 'og:title', titleText);
+    setMeta('property', 'og:description', descText);
+    if (find.photo_url) setMeta('property', 'og:image', find.photo_url);
+  }, [basePath]);
+
+  const getTargetRect = useCallback(() =>
+    activeCardRef.current?.getBoundingClientRect() ?? null
+  , []);
+
+  const closeFind = useCallback(() => {
+    setSelectedFind(null);
+    setSourceRect(null);
+    activeCardRef.current = null;
+    if (/\/find\/[^/]+$/.test(window.location.pathname)) {
+      const back = window.location.pathname.replace(/\/find\/[^/]+$/, '') || '/';
+      history.replaceState(null, '', back);
+    }
+    if (origMetaRef.current) applyPageMeta(origMetaRef.current);
+  }, []);
+
   if (finds.length === 0) return null;
 
   const today = new Date();
@@ -175,14 +329,37 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId }: Props) {
   const reversedCells = weeks.flat();
   const totalRows = weeks.length;
 
-  // First occurrence of each month in reversed (newest-first) order = last chronological day of that month in the data.
-  const monthLabelIndices = new Set<number>();
+  // Month label data: one entry per month, newest-first, with numRows = how many grid rows that month spans.
+  // Used to render labels in a separate flex column where each month has a proportional-height wrapper.
+  const monthLabelData: { date: Date; numRows: number }[] = [];
   {
     const seen = new Set<string>();
+    const entries: { date: Date; rowIndex: number }[] = [];
     reversedCells.forEach((date, i) => {
       if (!date) return;
+      if (date > today) return;
       const key = `${date.getFullYear()}-${date.getMonth()}`;
-      if (!seen.has(key)) { seen.add(key); monthLabelIndices.add(i); }
+      if (!seen.has(key)) {
+        seen.add(key);
+        entries.push({ date, rowIndex: Math.floor(i / colCount) });
+      }
+    });
+    // Sort newest month first (by date descending) so labels render top-to-bottom = newest-to-oldest.
+    // When two months share the same rowIndex (e.g. May 31 + Jun 1 in the same week), the later month stays on top.
+    entries.sort((a, b) => b.date.getTime() - a.date.getTime());
+
+    // Compute section end for each entry.
+    // When entries share a rowIndex, the earlier entry gets at least rowIndex+1 so it occupies ≥1 row.
+    const sectionEnds = entries.map((entry, idx) => {
+      const nextRowIndex = idx + 1 < entries.length ? entries[idx + 1].rowIndex : totalRows;
+      return Math.max(entry.rowIndex + 1, nextRowIndex);
+    });
+
+    entries.forEach((entry, idx) => {
+      // Section starts where the previous section ended (not at entry.rowIndex, which could be shared).
+      const sectionStart = idx === 0 ? 0 : sectionEnds[idx - 1];
+      const numRows = Math.max(1, sectionEnds[idx] - sectionStart);
+      monthLabelData.push({ date: entry.date, numRows });
     });
   }
 
@@ -241,11 +418,38 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId }: Props) {
   // Ghosts render first (behind) so their z-index can stay 0.
   const combinedSlice = [...ghostSlice, ...stackSlice];
 
+  // Grid row start for each month label when rendered inside the grid (mobile).
+  const monthLabelGridRows = monthLabelData.map((_, idx) => {
+    let start = 0;
+    for (let k = 0; k < idx; k++) start += monthLabelData[k].numRows;
+    return start + 1;
+  });
+
   return (
     <>
     <div className="flex gap-0">
-      {/* Calendar grid: colCount day cols + narrow month-label col */}
+      {/* Month label column — separate from grid so sticky works via flex-height sections */}
+      <div className="cal-month-col">
+          {monthLabelData.map(({ date, numRows }, idx) => {
+            // Pixel-exact height: numRows × (cellH + gap), minus one gap on the last section.
+            const rowH = cellHeightPx + rowGapPx;
+            const isLast = idx === monthLabelData.length - 1;
+            const exactH = cellHeightPx > 0 ? numRows * rowH - (isLast ? rowGapPx : 0) : undefined;
+            return (
+              <div
+                key={`${date.getFullYear()}-${date.getMonth()}`}
+                style={exactH !== undefined ? { height: exactH, flexShrink: 0 } : { flex: numRows }}
+              >
+                <div className="cal-month-label">
+                  <MonthLabel date={date} today={today} />
+                </div>
+              </div>
+            );
+          })}
+      </div>
+      {/* Calendar grid */}
       <div
+        ref={gridRef}
         className="cal-grid grid"
         style={{
           '--cal-gap': 'clamp(2px, .5vw, 6px)',
@@ -253,8 +457,8 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId }: Props) {
           gap: 'var(--cal-gap)',
         } as React.CSSProperties}
       >
-        {/* Circle pass (desktop) — rendered first so cells sit on top in DOM stacking order */}
-        {colCount > 1 && reversedCells.map((date, i) => {
+        {/* Circle pass — rendered first so cells sit on top in DOM stacking order */}
+        {reversedCells.map((date, i) => {
           if (!date) return null;
           const added = luckAddedOnDay(finds, date);
           if (added <= 0) return null;
@@ -264,9 +468,11 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId }: Props) {
           return (
             <div
               key={`circle-${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`}
-              className={`day-num-${colIndex} pointer-events-none`}
+              className={colCount > 1 ? `day-num-${colIndex} pointer-events-none cal-find-circle` : 'pointer-events-none cal-find-circle'}
               style={{
                 gridRowStart: rowIndex + 1,
+                ...(colCount === 1 && { gridColumn: 1 }),
+                width: '100%',
                 height: 0,
                 alignSelf: 'center',
                 position: 'relative',
@@ -314,6 +520,7 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId }: Props) {
           const dayCell = (
             <div
               key={cellKey}
+              ref={i === 0 ? probeRef : undefined}
               className={['day-cell', `day-num-${colIndex}`, isWeekend && 'weekend', isToday && 'today'].filter(Boolean).join(' ')}
               style={{
                 gridRowStart: rowIndex + 1,
@@ -337,23 +544,6 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId }: Props) {
                 </div>
               )}
 
-              {/* Mobile circle — inside cell so it auto-places correctly with its row */}
-              {colCount === 1 && added > 0 && (
-                <div
-                  className="pointer-events-none"
-                  style={{
-                    position: 'absolute',
-                    top: '50%',
-                    left: '50%',
-                    transform: 'translate(-50%, -50%)',
-                    width: `${luckAddedToCircleDiameterPct(added)}%`,
-                    aspectRatio: '1',
-                    borderRadius: '50%',
-                    background: 'color-mix(in srgb, var(--color-find-circle) 50%, transparent)',
-                  }}
-                />
-              )}
-
               <span className={['day-cell-label', (isToday || dayNum === 1) && 'notable'].filter(Boolean).join(' ')}>
                 {dayNum === 1
                   ? `${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][date.getMonth()]} 1`
@@ -362,19 +552,7 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId }: Props) {
             </div>
           );
 
-          if (!monthLabelIndices.has(i)) return dayCell;
-
-          return (
-            <React.Fragment key={cellKey}>
-              <div
-                className="cal-month-label"
-                style={{ '--cal-month-row': rowIndex + 1 } as React.CSSProperties}
-              >
-                <MonthLabel date={date} today={today} />
-              </div>
-              {dayCell}
-            </React.Fragment>
-          );
+          return dayCell;
         })}
       </div>
 
@@ -394,6 +572,7 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId }: Props) {
         per-day rows instead of per-week rows.
       */}
       <div className="cal-photo-col relative">
+        {header && <div className="cal-photo-header">{header}</div>}
         {findSentinelData.map(({ find, fraction }) => (
           <div
             key={`sentinel-${find.id}`}
@@ -404,9 +583,9 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId }: Props) {
           />
         ))}
 
-        <div className="sticky top-0 h-screen flex items-center py-4">
+        <div className="sticky top-0 h-screen flex items-start py-4">
           {/* Square container: portrait fills height (3/4 wide), landscape fills width (3/4 tall) — equal area, no crop */}
-          <div className="relative w-full aspect-square shrink-0">
+          <div className="cal-photo-frame relative w-full aspect-square shrink-0">
             {combinedSlice.map((find) => {
               const exitProg = exitProgress.get(find.id) ?? 0;
               const isGhost = exitProg >= 1;
@@ -444,12 +623,20 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId }: Props) {
               const opacity = posFromTop >= TOP_N ? 0 : Math.max(0, 1 - Math.max(0, exitProg - FADE_START) / (1 - FADE_START));
               const transition = exitProg === 0 ? 'opacity 400ms ease' : undefined;
 
+              // Only the top card is clickable — clicking a buried card has no clean visual meaning.
               const cardClass = `absolute overflow-hidden rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.5)] ${
                 isLandscape ? 'inset-x-0 top-1/2 aspect-[4/3]' : 'inset-y-0 left-1/2 aspect-[3/4]'
-              }`;
-              const cardStyle = { zIndex: stackIdx + 1, opacity, transition, transform: baseTransform };
-              const cardInner = (
-                <>
+              }${isTop ? ' cursor-pointer' : ''}`;
+              // Hide the card while its dialog is open.
+              const isDialogOpen = selectedFind?.id === find.id;
+              const cardStyle = { zIndex: stackIdx + 1, opacity: isDialogOpen ? 0 : opacity, transition: isDialogOpen ? 'none' : transition, transform: baseTransform };
+              return (
+                <div
+                  key={find.id}
+                  className={cardClass}
+                  style={cardStyle}
+                  onClick={isTop ? e => openFind(find, e.currentTarget as HTMLElement) : undefined}
+                >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={find.photo_url}
@@ -459,8 +646,8 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId }: Props) {
                     ref={el => { if (el?.complete && el.naturalWidth > 0) detectOrientation(el, find.id); }}
                     className="w-full h-full object-cover block"
                   />
-                  <div className="absolute bottom-0 left-0 flex flex-col items-start justify-end-safe gap-2 px-2 py-2 aspect-video min-w-60 font-semibold text-xs"
-                    style={{ background: 'linear-gradient(12.5deg, color-mix(in srgb, var(--color-background) 90%, rgba(0,0,0,.5)), transparent 75%, transparent)'}}>
+                  <div className="cal-location-label absolute bottom-0 left-0 right-0 flex flex-col items-start justify-end-safe gap-2 px-2 py-2 aspect-video min-w-60 font-semibold text-xs"
+                    style={{ background: 'linear-gradient(20deg, color-mix(in srgb, var(--color-background) 90%, rgba(0,0,0,.5)), transparent 50%, transparent)'}}>
                     <span className={[
                         'truncate flex gap-1 transition-opacity duration-300',
                         isTop && find.location_name ? 'opacity-100' : 'opacity-0',
@@ -468,16 +655,6 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId }: Props) {
                       <MapPin size={12} strokeWidth={2} className="shrink-0" />{find.location_name}
                     </span>
                   </div>
-                </>
-              );
-
-              return userId === find.user_id ? (
-                <Link key={find.id} href={`/account/finds/${find.id}/edit`} className={cardClass} style={cardStyle}>
-                  {cardInner}
-                </Link>
-              ) : (
-                <div key={find.id} className={cardClass} style={cardStyle}>
-                  {cardInner}
                 </div>
               );
             })}
@@ -486,8 +663,10 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId }: Props) {
       </div>
     </div>
 
+    <FindCardDialog find={selectedFind} userId={userId} username={username} onClose={closeFind} sourceRect={sourceRect} getTargetRect={getTargetRect} imperativeCloseRef={dialogCloseRef} />
+
     {/* Temporary controls palette */}
-    <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 px-1.5 py-1.5 rounded-2xl shadow-xl text-xs font-medium"
+    {process.env.NODE_ENV === 'development' && <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 px-1.5 py-1.5 rounded-2xl shadow-xl text-xs font-medium"
       style={{ background: 'var(--color-surface)', border: '1px solid color-mix(in srgb, var(--color-text-primary) 12%, transparent)' }}>
       <button onClick={() => setPhotoSide('left')}
         className="px-3 py-1.5 rounded-xl transition-colors"
@@ -521,7 +700,7 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId }: Props) {
         style={{ background: weekStart === 0 ? 'color-mix(in srgb, var(--color-text-primary) 15%, transparent)' : 'transparent', color: 'var(--color-text-primary)' }}>
         Sun
       </button>
-    </div>
+    </div>}
     </>
   );
 }

@@ -42,7 +42,7 @@ export function FindCard({ find }: FindCardProps) {
 
   return (
     <Link
-      href={`/finds/${find.id}`}
+      href={`/find/${find.id}`}
       className="block border border-border rounded-lg overflow-hidden hover:border-accent transition-colors duration-150 max-w-[400px]"
     >
       {/* Photo with annotation markers */}

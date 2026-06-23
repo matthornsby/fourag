@@ -13,22 +13,21 @@ export default function ResetPasswordPage() {
   const [isPending, startTransition] = useTransition()
 
   useEffect(() => {
-    const hash = window.location.hash.substring(1)
-    const params = new URLSearchParams(hash)
-    const accessToken = params.get('access_token')
-    const refreshToken = params.get('refresh_token')
+    const supabase = createClient()
 
-    if (!accessToken || !refreshToken) {
-      router.replace('/auth/sign-in')
-      return
-    }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && session)) {
+        setReady(true)
+      }
+    })
 
-    createClient().auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
-      .then(({ error }) => {
-        if (error) router.replace('/auth/sign-in')
-        else setReady(true)
-      })
-  }, [router])
+    // Also check for an existing recovery session (e.g. page refresh)
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) setReady(true)
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
