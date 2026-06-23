@@ -8,12 +8,30 @@ export function luckValue(leafCount: number): number {
 }
 
 export function computeLuck(finds: (Find & { clovers: Clover[] })[], atTime: Date): number {
-  return finds.reduce((sum, find) => {
-    const daysSince = (atTime.getTime() - new Date(find.found_at).getTime()) / 86400000
-    if (daysSince < 0) return sum
-    const findLuck = find.clovers.reduce((s, c) => s + luckValue(c.leaf_count), 0)
-    return sum + Math.max(0, findLuck - LUCK_DECAY_RATE * daysSince)
-  }, 0)
+  if (finds.length === 0) return 0
+
+  const sorted = [...finds].sort(
+    (a, b) => new Date(a.found_at).getTime() - new Date(b.found_at).getTime()
+  )
+
+  let pool = 0
+  let lastTime: number | null = null
+
+  for (const find of sorted) {
+    const findTime = new Date(find.found_at).getTime()
+    if (findTime > atTime.getTime()) break
+    if (lastTime !== null) {
+      const daysBetween = (findTime - lastTime) / 86400000
+      pool = Math.max(0, pool - LUCK_DECAY_RATE * daysBetween)
+    }
+    pool += find.clovers.reduce((s, c) => s + luckValue(c.leaf_count), 0)
+    lastTime = findTime
+  }
+
+  if (lastTime === null) return 0
+
+  const daysRemaining = (atTime.getTime() - lastTime) / 86400000
+  return Math.max(0, pool - LUCK_DECAY_RATE * daysRemaining)
 }
 
 export function luckAddedOnDay(finds: (Find & { clovers: Clover[] })[], date: Date): number {

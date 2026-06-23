@@ -65,11 +65,15 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
   const typedProfile = profile as UserProfile;
   const isOwner = user?.id === typedProfile.id;
 
+  const privacyFilter = isOwner
+    ? ["public", "approximate", "private"]
+    : ["public", "approximate"];
+
   const { data: finds } = await supabase
     .from("finds")
     .select("*, clovers(*), users(username)")
     .eq("user_id", typedProfile.id)
-    .in("location_privacy", ["public", "approximate"])
+    .in("location_privacy", privacyFilter)
     .order("found_at", { ascending: false });
 
   const typedFinds = (finds ?? []) as (Find & { clovers: Clover[] })[];

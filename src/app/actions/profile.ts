@@ -16,6 +16,9 @@ export async function updateProfile(
   }
 
   const bio = (formData.get('bio') as string).trim() || null
+  if (bio && bio.length > 200) {
+    return { ok: false, error: 'Bio must be 200 characters or fewer.' }
+  }
   const pronounsRaw = formData.get('pronouns') as string
   const pronouns = ['neutral', 'masculine', 'feminine', 'none'].includes(pronounsRaw)
     ? pronounsRaw

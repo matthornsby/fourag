@@ -21,12 +21,18 @@ export async function createFind(formData: FormData): Promise<{ error: string } 
   if (!foundAt) {
     return { error: 'Date and time found is required.' }
   }
+  if (new Date(foundAt) > new Date()) {
+    return { error: 'Date found cannot be in the future.' }
+  }
 
   const lat = formData.get('lat') as string | null
   const lng = formData.get('lng') as string | null
   const locationPrivacy = (formData.get('location_privacy') as string) || 'public'
   const locationName = formData.get('location_name') as string | null
-  const notes = formData.get('notes') as string | null
+  const notes = (formData.get('notes') as string | null)?.trim() || null
+  if (notes && notes.length > 500) {
+    return { error: 'Notes must be 500 characters or fewer.' }
+  }
   const leafCountsRaw = formData.get('leaf_counts') as string
 
   let leafCounts: number[]
@@ -35,6 +41,9 @@ export async function createFind(formData: FormData): Promise<{ error: string } 
     leafCounts = JSON.parse(leafCountsRaw)
     if (!Array.isArray(leafCounts) || leafCounts.length === 0) {
       return { error: 'At least one clover is required.' }
+    }
+    if (leafCounts.some((n) => !Number.isInteger(n) || n < 3 || n > 21)) {
+      return { error: 'Leaf count must be between 3 and 21.' }
     }
     const annotationsRaw = formData.get('annotations') as string
     annotations = annotationsRaw ? JSON.parse(annotationsRaw) : leafCounts.map(() => null)
@@ -106,7 +115,8 @@ export async function createFind(formData: FormData): Promise<{ error: string } 
     return { error: `Find saved, but couldn't record clover details — ${cloversError.message}` }
   }
 
-  redirect('/')
+  const returnTo = formData.get('return_to') as string | null
+  redirect(returnTo && returnTo.startsWith('/') ? returnTo : '/')
 }
 
 export async function updateFind(findId: string, formData: FormData): Promise<{ error: string } | never> {
@@ -135,12 +145,18 @@ export async function updateFind(findId: string, formData: FormData): Promise<{ 
   if (!foundAt) {
     return { error: 'Date and time found is required.' }
   }
+  if (new Date(foundAt) > new Date()) {
+    return { error: 'Date found cannot be in the future.' }
+  }
 
   const lat = formData.get('lat') as string | null
   const lng = formData.get('lng') as string | null
   const locationPrivacy = (formData.get('location_privacy') as string) || 'public'
   const locationName = formData.get('location_name') as string | null
-  const notes = formData.get('notes') as string | null
+  const notes = (formData.get('notes') as string | null)?.trim() || null
+  if (notes && notes.length > 500) {
+    return { error: 'Notes must be 500 characters or fewer.' }
+  }
   const leafCountsRaw = formData.get('leaf_counts') as string
 
   let leafCounts: number[]
@@ -149,6 +165,9 @@ export async function updateFind(findId: string, formData: FormData): Promise<{ 
     leafCounts = JSON.parse(leafCountsRaw)
     if (!Array.isArray(leafCounts) || leafCounts.length === 0) {
       return { error: 'At least one clover is required.' }
+    }
+    if (leafCounts.some((n) => !Number.isInteger(n) || n < 3 || n > 21)) {
+      return { error: 'Leaf count must be between 3 and 21.' }
     }
     const annotationsRaw = formData.get('annotations') as string
     annotations = annotationsRaw ? JSON.parse(annotationsRaw) : leafCounts.map(() => null)
@@ -322,10 +341,17 @@ export async function createAnonymousFind(formData: FormData): Promise<{ error: 
 
   const foundAt = formData.get('found_at') as string
   if (!foundAt) return { error: 'Date and time found is required.' }
+  if (new Date(foundAt) > new Date()) return { error: 'Date found cannot be in the future.' }
+
+  const notesRaw = (formData.get('notes') as string | null)?.trim() || null
+  if (notesRaw && notesRaw.length > 500) return { error: 'Notes must be 500 characters or fewer.' }
 
   let parsed: ReturnType<typeof parseFindFormData>
   try {
     parsed = parseFindFormData(formData)
+    if (parsed.leafCounts.some((n) => !Number.isInteger(n) || n < 3 || n > 21)) {
+      return { error: 'Leaf count must be between 3 and 21.' }
+    }
   } catch {
     return { error: 'Invalid clover data.' }
   }
@@ -388,18 +414,29 @@ export async function createFindAndRequestAccount(formData: FormData): Promise<{
   const password = formData.get('password') as string
 
   if (!username) return { error: 'Username is required.' }
+  if (!/^[a-zA-Z0-9_-]{3,20}$/.test(username)) {
+    return { error: 'Username must be 3–20 characters and contain only letters, numbers, hyphens, or underscores.' }
+  }
   if (!email) return { error: 'Email is required.' }
   if (!password) return { error: 'Password is required.' }
+  if (password.length < 8) return { error: 'Password must be at least 8 characters.' }
 
   const photoFile = formData.get('photoFile') as File | null
   if (!photoFile || photoFile.size === 0) return { error: 'A photo is required.' }
 
   const foundAt = formData.get('found_at') as string
   if (!foundAt) return { error: 'Date and time found is required.' }
+  if (new Date(foundAt) > new Date()) return { error: 'Date found cannot be in the future.' }
+
+  const notesRaw2 = (formData.get('notes') as string | null)?.trim() || null
+  if (notesRaw2 && notesRaw2.length > 500) return { error: 'Notes must be 500 characters or fewer.' }
 
   let parsed: ReturnType<typeof parseFindFormData>
   try {
     parsed = parseFindFormData(formData)
+    if (parsed.leafCounts.some((n) => !Number.isInteger(n) || n < 3 || n > 21)) {
+      return { error: 'Leaf count must be between 3 and 21.' }
+    }
   } catch {
     return { error: 'Invalid clover data.' }
   }

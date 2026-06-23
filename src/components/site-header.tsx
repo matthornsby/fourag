@@ -2,8 +2,8 @@ import React from "react";
 import Link from "next/link";
 import { XCloseIcon } from "@/components/icons/x-close";
 import { SignOutButton } from "@/components/sign-out-button";
-import { SHARE_A_FIND } from "@/lib/constants";
 import { UserAvatar, avatarColor } from "@/components/user-avatar";
+import { ShareFindLink } from "@/components/share-find-link";
 
 interface SiteHeaderProps {
   user: { id: string; username: string; isAdmin?: boolean; avatarUrl?: string | null } | null;
@@ -70,9 +70,7 @@ export function SiteHeader({ user }: SiteHeaderProps) {
               Sign in
             </Link>
           )}
-          <Link href="/account/finds/new" className="button button-primary">
-            {SHARE_A_FIND}
-          </Link>
+          <ShareFindLink />
         </nav>
       </div>
     </header>

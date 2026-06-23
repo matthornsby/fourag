@@ -3,9 +3,14 @@ import { createClient } from '@/lib/supabase-server'
 import { FindForm } from '@/components/find-form'
 import { SHARE_A_FIND } from '@/lib/constants'
 
-export default async function NewFindPage() {
+export default async function NewFindPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ returnTo?: string }>
+}) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
+  const { returnTo } = await searchParams
 
   return (
     <main className="flex-1 px-4 py-8 sm:px-6">
@@ -26,7 +31,7 @@ export default async function NewFindPage() {
           <p className="text-sm text-text-secondary mb-8">
             Record a clover you&apos;ve found — photo, date, and leaf count.
           </p>
-          <FindForm isAuthenticated={!!user} />
+          <FindForm isAuthenticated={!!user} returnTo={returnTo} />
         </div>
       </div>
     </main>

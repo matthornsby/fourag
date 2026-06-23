@@ -72,7 +72,14 @@ export default async function Home() {
     luckEndDates['anonymous'] = computeLuckEndDate(anonymousFinds);
   }
 
-  const heroFinds = typedFinds.slice(0, 6);
+  const heroFinds = [...typedFinds]
+    .filter(f => f.photo_url)
+    .sort((a, b) => {
+      const score = (f: Find & { clovers: Clover[] }) =>
+        (f.clovers ?? []).reduce((sum, c) => sum + c.leaf_count, 0);
+      return score(b) - score(a);
+    })
+    .slice(0, 6);
 
   const mappableFinds = typedFinds
     .filter(f => f.lat !== null && f.lng !== null)

@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { computeLuck, luckAddedOnDay, luckToOpacity, luckAddedToMarkerSize, luckAddedToCircleDiameterPct } from '@/lib/luck'
 import { CloverMarker } from '@/components/clover-marker'
 import { UserAvatar } from '@/components/user-avatar'
+import { InterrobangIcon } from '@/components/icons/interrobang'
 import { markerRotation } from '@/lib/marker-rotation'
 import { luckSentence } from '@/lib/pronouns'
 import type { Find, Clover, UserProfile } from '@/types'
@@ -74,7 +75,7 @@ export function UserProfileCard({ profile, finds, luckEndDate, weekStart = 1, is
       {/* Profile header */}
       <div className="flex-1 flex flex-col items-center gap-2 text-center px-2">
         <Link href={`/${profile.username.toLowerCase()}`}>
-          <UserAvatar username={profile.username} avatarUrl={profile.avatar_url} />
+          <UserAvatar username={profile.username} avatarUrl={profile.avatar_url} fallback={profile.username === 'anonymous' ? <InterrobangIcon /> : undefined} />
         </Link>
 
         <div className="flex flex-col gap-1 text-balance">

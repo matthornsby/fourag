@@ -35,9 +35,10 @@ interface FindFormProps {
   find?: Find & { clovers: Clover[] }
   isAuthenticated?: boolean
   updateAction?: (findId: string, formData: FormData) => Promise<{ error: string } | never>
+  returnTo?: string
 }
 
-export function FindForm({ find, isAuthenticated = true, updateAction }: FindFormProps) {
+export function FindForm({ find, isAuthenticated = true, updateAction, returnTo }: FindFormProps) {
   const isEdit = find !== undefined
 
   const [photoFile, setPhotoFile] = useState<File | null>(null)
@@ -152,14 +153,27 @@ export function FindForm({ find, isAuthenticated = true, updateAction }: FindFor
     if (notes) formData.append('notes', notes)
     formData.append('leaf_counts', JSON.stringify(leafCounts))
     formData.append('annotations', JSON.stringify(annotations))
+    if (returnTo) formData.append('return_to', returnTo)
     return formData
   }
+
+  const hasPhoto = isEdit ? true : !!photoFile
+  const allAnnotated = annotations.every((a) => a !== null)
+  const canSubmit = hasPhoto && allAnnotated
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setError(null)
 
     if (step === 'account') {
+      if (!/^[a-zA-Z0-9_-]{3,20}$/.test(accountUsername)) {
+        setError('Username must be 3–20 characters and contain only letters, numbers, hyphens, or underscores.')
+        return
+      }
+      if (accountPassword.length < 8) {
+        setError('Password must be at least 8 characters.')
+        return
+      }
       const formData = buildFindFormData()
       formData.append('username', accountUsername)
       formData.append('email', accountEmail)
@@ -173,6 +187,8 @@ export function FindForm({ find, isAuthenticated = true, updateAction }: FindFor
 
     if (!isEdit && !photoFile) { setError('A photo is required.'); return }
     if (!foundAt) { setError('Date and time found is required.'); return }
+    if (new Date(foundAt) > new Date()) { setError('Date found cannot be in the future.'); return }
+    if (notes.length > 500) { setError('Notes must be 500 characters or fewer.'); return }
 
     if (!isAuthenticated) {
       startTransition(async () => {
@@ -193,6 +209,7 @@ export function FindForm({ find, isAuthenticated = true, updateAction }: FindFor
   function handleRequestAccount() {
     if (!isEdit && !photoFile) { setError('A photo is required.'); return }
     if (!foundAt) { setError('Date and time found is required.'); return }
+    if (new Date(foundAt) > new Date()) { setError('Date found cannot be in the future.'); return }
     setError(null)
     setStep('account')
   }
@@ -309,6 +326,7 @@ export function FindForm({ find, isAuthenticated = true, updateAction }: FindFor
           onChange={(e) => setNotes(e.target.value)}
           rows={3}
           placeholder="Where were you looking? What patch, what conditions?"
+          maxLength={500}
           className={`${inputClass} resize-none`}
         />
       </div>
@@ -385,7 +403,7 @@ export function FindForm({ find, isAuthenticated = true, updateAction }: FindFor
         <>
           <button
             type="submit"
-            disabled={isPending}
+            disabled={isPending || !canSubmit}
             className="w-full button button-primary"
           >
             {isPending ? 'Submitting…' : 'Log anonymously'}
@@ -393,7 +411,7 @@ export function FindForm({ find, isAuthenticated = true, updateAction }: FindFor
           <button
             type="button"
             onClick={handleRequestAccount}
-            disabled={isPending}
+            disabled={isPending || !canSubmit}
             className="w-full button button-secondary"
           >
             Log and request an account
@@ -409,7 +427,7 @@ export function FindForm({ find, isAuthenticated = true, updateAction }: FindFor
         <>
           <button
             type="submit"
-            disabled={isPending}
+            disabled={isPending || !canSubmit}
             className="w-full button button-primary"
           >
             {isPending ? 'Saving…' : isEdit ? 'Save changes' : 'Share this find'}
