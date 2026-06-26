@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import { MapPin } from "lucide-react";
 import { markerRotation } from "@/lib/marker-rotation";
-import { computeLuck, luckAddedOnDay, luckToOpacity, luckAddedToCircleDiameterPct, luckAddedToMarkerSize } from "@/lib/luck";
+import { computeLuck, luckAddedOnDay, luckToOpacity, luckAddedToCircleDiameterPct } from "@/lib/luck";
 import { CloverMarker } from "@/components/clover-marker";
 import { FindCardDialog } from "@/components/find-card-dialog";
 import type { Find, Clover } from "@/types";
@@ -84,17 +84,6 @@ interface Props {
 }
 
 
-function dominantLeafCount(finds: (Find & { clovers: Clover[] })[], date: Date): number | null {
-  const y = date.getFullYear(), m = date.getMonth(), d = date.getDate()
-  let max: number | null = null
-  finds.forEach(f => {
-    const fd = new Date(f.found_at)
-    if (fd.getFullYear() === y && fd.getMonth() === m && fd.getDate() === d) {
-      f.clovers.forEach(c => { if (max === null || c.leaf_count > max) max = c.leaf_count })
-    }
-  })
-  return max
-}
 
 function MonthLabel({ date, today }: { date: Date; today: Date }) {
   const cls = 'cal-month-label-inner flex flex-col leading-tight';
@@ -574,11 +563,11 @@ useEffect(() => {
           const luck = Math.round(computeLuck(finds, new Date(date.getFullYear(), date.getMonth(), dayNum, 23, 59, 59)));
           const opacity = luckToOpacity(luck);
           const added = luckAddedOnDay(finds, date);
-          const leafCount = dominantLeafCount(finds, date);
-          const topFind = sortedFinds.find(f => {
+          const dayFinds = sortedFinds.filter(f => {
             const fd = new Date(f.found_at);
             return fd.getFullYear() === date.getFullYear() && fd.getMonth() === date.getMonth() && fd.getDate() === dayNum;
-          }) ?? null;
+          });
+          const topFind = dayFinds[0] ?? null;
 
           const dayCell = (
             <div
@@ -591,21 +580,32 @@ useEffect(() => {
               } as React.CSSProperties}
               onClick={topFind ? e => openFind(topFind, e.currentTarget as HTMLElement) : undefined}
             >
-              {/* Clover marker */}
-              {leafCount !== null && added > 0 && (
-                <div
-                  className="pointer-events-none"
-                  style={{
-                    position: 'absolute',
-                    width: `${luckAddedToMarkerSize(added) * 100}%`,
-                    aspectRatio: '1',
-                    top: '50%',
-                    left: '50%',
-                    transform: 'translate(-50%, -50%)',
-                  }}
-                >
-                  <CloverMarker leafCount={leafCount} rotation={markerRotation(cellKey, 0)} filled />
-                </div>
+              {/* Annotated clover markers — one per clover across all finds for this day */}
+              {added > 0 && dayFinds.map((find, findIdx) =>
+                find.clovers.map((clover, cloverIdx) => {
+                  const hasAnnotation = clover.annotation_x != null && clover.annotation_y != null;
+                  const x = hasAnnotation ? clover.annotation_x! * 100 : 50;
+                  const y = hasAnnotation ? clover.annotation_y! * 100 : 50;
+                  const radius = clover.annotation_radius ?? 0.09;
+                  const rotation = clover.annotation_rotation ?? markerRotation(`${cellKey}-${findIdx}-${cloverIdx}`, 0);
+                  const sizePct = radius * 2 * 100;
+                  return (
+                    <div
+                      key={`${find.id}-${clover.id}`}
+                      className="pointer-events-none"
+                      style={{
+                        position: 'absolute',
+                        width: `${sizePct}%`,
+                        aspectRatio: '1',
+                        left: `${x}%`,
+                        top: `${y}%`,
+                        transform: 'translate(-50%, -50%)',
+                      }}
+                    >
+                      <CloverMarker leafCount={clover.leaf_count} rotation={rotation} filled />
+                    </div>
+                  );
+                })
               )}
 
               <span className={['day-cell-label', (isToday || dayNum === 1) && 'notable'].filter(Boolean).join(' ')}>
