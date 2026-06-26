@@ -300,7 +300,8 @@ body {
 
 /* Right-handed: photos left, labels middle, calendar right */
 [data-orientation="right-handed"] {
-  .cal-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); order: 3; }
+  .cal-grid-col { order: 3; }
+  .cal-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); }
   .cal-photo-col { order: 1; margin-left: 0; margin-right: 1rem; }
   .cal-month-col { order: 2; margin-right: calc(var(--cal-gap, 4px)); }
   .cal-month-label-inner { align-items: flex-end; text-align: right; }
@@ -315,7 +316,8 @@ body {
 
 /* Left-handed: calendar left, labels middle, photos right */
 [data-orientation="left-handed"] {
-  .cal-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); order: 1; }
+  .cal-grid-col { order: 1; }
+  .cal-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); }
   .cal-photo-col { order: 3; margin-left: 1rem; margin-right: 0; }
   .cal-month-col { order: 2; margin-left: calc(var(--cal-gap, 4px)); }
   .cal-month-label-inner { align-items: flex-start; text-align: left; }
@@ -328,9 +330,21 @@ body {
   .day-num-7 { grid-column-start: 7; }
 }
 
-.cal-grid {
+.cal-grid-col {
   flex: 1;
   min-width: 0;
+}
+
+.cal-dow-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--cal-gap) * 2);
+  color: var(--color-text-secondary);
+  padding-block: calc(var(--cal-gap) * 0.5);
+}
+
+.cal-grid {
   align-content: start;
 }
 
@@ -562,20 +576,92 @@ body {
   to   { opacity: 1; }
 }
 
+/* ─── Find carousel (in-dialog navigation) ──────────────────────────────────
+   JS only publishes each slide's position as custom properties:
+     --rel : signed offset from centre (0 = centred, ±1 = one card away …)
+     --ar  : |rel| clamped to 0–1   (0 centred → 1 at the edge)
+     --dir : sign of rel, clamped −1…1 (−1 = newer/left, +1 = older/right)
+     --card-step : px between adjacent cards (set on the viewport)
+   Everything visual below is tweakable here. ────────────────────────────────── */
+
+.find-carousel-viewport {
+  /* ── The single knob ──────────────────────────────────────────────────────
+     --neighbor is the master intensity of the off-centre treatment (0 = cards
+     look identical, 1 = default, >1 = exaggerated). Every neighbour property
+     below is derived from it via calc, so one value drives the whole feel.
+     The coefficients set each effect's character; --neighbor scales them. */
+  --neighbor: 1;
+  --neighbor-scale:  calc(var(--neighbor) * 0.16);   /* edge shrink (unitless)  */
+  --neighbor-rotate: calc(var(--neighbor) * 3deg);   /* fan tilt                */
+  --neighbor-blur:   calc(var(--neighbor) * 1px);    /* edge blur               */
+  --neighbor-dim:    calc(var(--neighbor) * 0.85);   /* scrim opacity at edge   */
+  --card-step: 560px;       /* px between adjacent cards — overwritten by JS */
+}
+
+.find-carousel-track {
+  pointer-events: none;
+}
+
+.find-carousel-slide {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  --rel: 0;
+  --ar: 0;
+  --dir: 0;
+  --vy: 0px;   /* vertical pan offset (px) for a too-tall card; applied to .find-card below */
+  transform:
+    translate(-50%, -50%)
+    translateX(calc(var(--rel) * var(--card-step)))
+    scale(calc(1 - var(--ar) * var(--neighbor-scale)))
+    rotate(calc(var(--dir) * var(--neighbor-rotate)));
+  filter: blur(calc(var(--ar) * var(--neighbor-blur)));
+  will-change: transform, filter;
+  pointer-events: auto;
+  /* overflow:visible so the card's drop shadow isn't clipped. A card taller than
+     the window keeps its natural height and simply overhangs (the fixed viewport
+     clips the overhang); JS pans it via --vy rather than scrolling it internally. */
+}
+
+/* The vertical pan lives on the card itself (not the slide) so it's independent of
+   the slide's FLIP/carousel transform — the card's top stays pinned as it grows
+   (e.g. while its image loads), avoiding any open-time vertical shift. */
+.find-carousel-slide .find-card {
+  transform: translateY(var(--vy, 0px));
+}
+
+/* Opaque scrim that dims neighbours from inside the card, so the card background
+   stays solid and the page never shows through. Sits above the card content. */
+.find-card-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: var(--color-background);
+  opacity: calc(var(--ar) * var(--neighbor-dim));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Drop the movement (scale/tilt); keep depth cues (blur/dim). */
+  .find-carousel-viewport {
+    --neighbor-scale: 0;
+    --neighbor-rotate: 0deg;
+  }
+}
+
 .find-card {
   width: var(--container-sm);
-
+  max-width: 90dvw;
   &.landscape{
     width: var(--container-md);
-    width: var(--container-3xl);
   }
+  
 
   @media (width >= theme(--breakpoint-sm)) {
     width: var(--container-4xl);
     &.landscape{
       width: var(--container-3xl);
     }
-    
   }
 
   .find-card-inner {

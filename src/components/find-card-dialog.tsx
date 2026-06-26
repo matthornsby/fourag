@@ -1,117 +1,72 @@
 'use client'
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import Link from "next/link";
-import { MapPin, Pencil } from "lucide-react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { XCloseIcon } from "@/components/icons/x-close";
-import { CloverMarker } from "@/components/clover-marker";
-import { FindMap } from "@/components/find-map";
+import { FindCardContent } from "@/components/find-card-content";
 import { markerRotation } from "@/lib/marker-rotation";
-import { cloverPath } from "@/lib/clover-path";
-import { luckValue, LUCK_DECAY_RATE } from "@/lib/luck";
 import type { Find, Clover } from "@/types";
 
+type FindWithClovers = Find & { clovers: Clover[] };
+
 interface Props {
-  find: (Find & { clovers: Clover[] }) | null;
+  /** Full ordered list of finds (newest-first). Newest sits on the left, oldest on the right. */
+  finds: FindWithClovers[];
+  /** Id of the find to centre. null → dialog closed. */
+  activeId: string | null;
   userId?: string;
   username?: string;
   onClose: () => void;
+  /** Called when the user navigates to a different find inside the carousel (for URL + meta). */
+  onNavigate?: (find: FindWithClovers) => void;
   sourceRect?: DOMRect | null;
   getTargetRect?: () => DOMRect | null;
   imperativeCloseRef?: React.MutableRefObject<(() => void) | null>;
   adminControls?: React.ReactNode;
+  /** Known orientations by find id (from the calendar) to render the right layout immediately. */
+  orientations?: Record<string, 'landscape' | 'portrait'>;
 }
-
-function groupLeafCounts(clovers: Clover[]): { count: number; num: number }[] {
-  const freq = new Map<number, number>();
-  for (const c of clovers) freq.set(c.leaf_count, (freq.get(c.leaf_count) ?? 0) + 1);
-  return Array.from(freq.entries())
-    .sort((a, b) => b[0] - a[0])
-    .map(([count, num]) => ({ count, num }));
-}
-
-const ONES = ['zero','one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve'];
-function numWord(n: number): string {
-  return n < ONES.length ? ONES[n] : String(n);
-}
-
-const LEAF_NAMES: Record<number, string> = {
-  3: 'three-leaf', 4: 'four-leaf', 5: 'five-leaf', 6: 'six-leaf', 7: 'seven-leaf',
-};
-function leafName(count: number): string {
-  return LEAF_NAMES[count] ?? `${count}-leaf`;
-}
-
-function cloverDescription(clovers: Clover[]): string {
-  const groups = groupLeafCounts(clovers);
-  const parts = groups.map(({ count, num }) => {
-    const word = numWord(num);
-    const name = leafName(count);
-    return `${num === 1 ? 'a' : word} ${name} ${num === 1 ? 'clover' : 'clovers'}`;
-  });
-  if (parts.length === 0) return 'a clover';
-  if (parts.length === 1) return parts[0];
-  return parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1];
-}
-
-function timeOfDay(dateString: string): string {
-  const hour = new Date(dateString).getHours();
-  if (hour >= 5 && hour < 12) return 'morning';
-  if (hour >= 12 && hour < 17) return 'afternoon';
-  if (hour >= 17 && hour < 21) return 'evening';
-  return 'night';
-}
-
-function formatNarrativeDate(dateString: string): string {
-  return new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' }).format(new Date(dateString));
-}
-
-
-function luckNarrative(find: Find & { clovers: Clover[] }): string {
-  const totalLuck = find.clovers.reduce((sum, c) => sum + luckValue(c.leaf_count), 0);
-  if (totalLuck <= 0) return '';
-  // Luck drops to 0 at t = totalLuck / LUCK_DECAY_RATE
-  const daysOfLuck = Math.round(totalLuck / LUCK_DECAY_RATE);
-  const expiryDate = new Date(find.found_at);
-  expiryDate.setDate(expiryDate.getDate() + daysOfLuck);
-  const now = new Date();
-  const expired = expiryDate < now;
-  const expiryStr = formatNarrativeDate(expiryDate.toISOString());
-  const pronoun = find.clovers.length === 1 ? 'It' : 'They';
-  if (expired) {
-    return `${pronoun} added ${daysOfLuck} days of luck, but it ran out on ${expiryStr}.`;
-  }
-  return `${pronoun} added ${daysOfLuck} days of luck, lasting until ${expiryStr}.`;
-}
-
 
 const ANIM_MS = 320;
 const EASING = 'cubic-bezier(0.32,0.72,0,1)';
+// Wheel delta (px) that equals one full card step. Lower = more responsive.
+const WHEEL_DISTANCE = 200;
+// Idle time after the last wheel/touch move before snapping to the nearest card.
+const SNAP_IDLE_MS = 90;
+// Gap kept above/below a too-tall card at the scroll extremes (room for its shadow).
+const VMARGIN = 20;
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
 
-// Convert annotation coords (fraction of image) → fraction of container for object-cover display.
-function coverCoords(ax: number, ay: number, naturalRatio: number, containerRatio: number) {
-  if (naturalRatio >= containerRatio) {
-    // Landscape image relative to container: overflows horizontally, center-cropped.
-    const scale = naturalRatio / containerRatio;
-    return { cx: (ax - 0.5) * scale + 0.5, cy: ay };
-  } else {
-    // Portrait image relative to container: overflows vertically, center-cropped.
-    const scale = containerRatio / naturalRatio;
-    return { cx: ax, cy: (ay - 0.5) * scale + 0.5 };
-  }
-}
-
-// Radius stored as fraction of rendered image width; convert to fraction of container width.
-function coverRadius(r: number, naturalRatio: number, containerRatio: number) {
-  return naturalRatio >= containerRatio ? r * naturalRatio / containerRatio : r;
-}
-
-export function FindCardDialog({ find, userId, username, onClose, sourceRect, getTargetRect, imperativeCloseRef, adminControls }: Props) {
-  const [currentFind, setCurrentFind] = useState(find);
+export function FindCardDialog({
+  finds, activeId, userId, username, onClose, onNavigate,
+  sourceRect, getTargetRect, imperativeCloseRef, adminControls, orientations,
+}: Props) {
+  // Mirror activeId locally so the carousel survives the close animation.
+  const [currentId, setCurrentId] = useState<string | null>(activeId);
+  // The card we've come to rest on. Only this card mounts its map, so fast
+  // fly-throughs never spin up (and tear down mid-load) heavy maplibre instances.
+  const [settledId, setSettledId] = useState<string | null>(null);
   const [theme, setTheme] = useState<string | undefined>(undefined);
-  const [photoRatios, setPhotoRatios] = useState<{ natural: number; container: number } | null>(null);
-  const photoImgRef = useRef<HTMLImageElement>(null);
 
+  const indexById = useMemo(() => {
+    const m = new Map<string, number>();
+    finds.forEach((f, i) => m.set(f.id, i));
+    return m;
+  }, [finds]);
+
+  const activeIndex = currentId !== null ? (indexById.get(currentId) ?? 0) : 0;
+
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const backdropRef = useRef<HTMLDivElement>(null);
+  const slideRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const positionRef = useRef(activeIndex);          // continuous carousel position (float)
+  const vfracRef = useRef(0);                         // active card's vertical read position: 0 top … 1 bottom
+  const rafRef = useRef(0);
+  const tweeningRef = useRef(false);
+  const animatingCloseRef = useRef(false);
+  const pendingFlipRef = useRef(false);
+
+  // Track theme for the active card's map.
   useEffect(() => {
     const read = () => setTheme(document.documentElement.dataset.theme);
     read();
@@ -120,115 +75,351 @@ export function FindCardDialog({ find, userId, username, onClose, sourceRect, ge
     return () => obs.disconnect();
   }, []);
 
-  const cardRef = useRef<HTMLDivElement>(null);
-  const backdropRef = useRef<HTMLDivElement>(null);
-  const animatingRef = useRef(false);
-  const openScaleRef = useRef(0.5);
+  // Horizontal spacing between cards. Larger pushes the neighbours further toward the
+  // edges so only a sliver peeks — enough to signal order without distracting.
+  const step = () => (typeof window !== 'undefined' ? Math.min(window.innerWidth * 0.66, 820) : 640);
 
-  useEffect(() => {
-    if (find) { setCurrentFind(find); setPhotoRatios(null); }
-  }, [find]);
+  // The `.find-card` element inside a slide (the thing that may overhang the window).
+  const cardEl = (slide?: HTMLElement | null) =>
+    (slide?.querySelector('.find-card') as HTMLElement | null) ?? null;
 
-  function handlePhotoLoad(e: React.SyntheticEvent<HTMLImageElement>) {
-    const img = e.currentTarget;
-    if (img.naturalWidth > 0 && img.clientWidth > 0 && img.clientHeight > 0) {
-      setPhotoRatios({
-        natural: img.naturalWidth / img.naturalHeight,
-        container: img.clientWidth / img.clientHeight,
-      });
+  // How far a card can pan up or down (px) before it's flush with the window edge
+  // (with a small margin). 0 → the card fits and doesn't pan.
+  const overhang = (card: HTMLElement | null) => {
+    if (!card) return 0;
+    const avail = window.innerHeight - 2 * VMARGIN;
+    return Math.max(0, (card.offsetHeight - avail) / 2);
+  };
+
+  // vy for a card from a read fraction: 0 → +overhang (top-aligned), 1 → −overhang
+  // (bottom-aligned). Top-aligning *every* overhanging card (not just the active one)
+  // means active↔neighbour transitions during navigation don't change --vy → no jump.
+  const vyFor = (card: HTMLElement | null, frac: number) => overhang(card) * (1 - 2 * frac);
+
+  // Publish the slide's position as CSS custom properties; the visual treatment
+  // (translate/scale/rotate/blur + scrim dim) lives in globals.css so it can be
+  // tweaked there. `--rel` is the signed offset from centre, `--ar` its clamped
+  // magnitude (0 centred → 1 edge), `--dir` the side (-1 newer/left, +1 older/right).
+  // `--vy` top-aligns an overhanging card; only the active card pans (vfrac).
+  const layoutOne = (el: HTMLDivElement, idx: number) => {
+    const rel = idx - positionRef.current;
+    const ar = Math.min(Math.abs(rel), 1);
+    el.style.setProperty('--rel', String(rel));
+    el.style.setProperty('--ar', String(ar));
+    el.style.setProperty('--dir', String(clamp(rel, -1, 1)));
+    const frac = el.dataset.findId === currentId ? vfracRef.current : 0;
+    el.style.setProperty('--vy', `${vyFor(cardEl(el), frac)}px`);
+    el.style.zIndex = String(100 - Math.round(Math.abs(rel) * 10));
+    el.style.pointerEvents = Math.abs(rel) < 0.5 ? 'auto' : 'none';
+  };
+
+  const layoutAll = () => {
+    viewportRef.current?.style.setProperty('--card-step', `${step()}px`);
+    slideRefs.current.forEach((el) => {
+      const idx = indexById.get(el.dataset.findId ?? '');
+      if (idx != null) layoutOne(el, idx);
+    });
+  };
+
+  const registerSlide = (el: HTMLDivElement | null, id: string) => {
+    if (el) {
+      el.dataset.findId = id;
+      slideRefs.current.set(id, el);
+      const idx = indexById.get(id);
+      // Place immediately so freshly-mounted slides never flash at centre.
+      if (idx != null && !pendingFlipRef.current) layoutOne(el, idx);
+    } else {
+      slideRefs.current.delete(id);
     }
-  }
+  };
 
-  // FLIP open
+  const animateTo = (target: number) => {
+    cancelAnimationFrame(rafRef.current);
+    const start = positionRef.current;
+    if (Math.abs(target - start) < 0.001) { positionRef.current = target; layoutAll(); return; }
+    let startT = 0; // captured from the first rAF timestamp
+    tweeningRef.current = true;
+    const tick = (now: number) => {
+      if (!startT) startT = now;
+      const t = Math.min(1, (now - startT) / ANIM_MS);
+      positionRef.current = start + (target - start) * easeOut(t);
+      layoutAll();
+      if (t < 1) {
+        rafRef.current = requestAnimationFrame(tick);
+      } else {
+        positionRef.current = target;
+        tweeningRef.current = false;
+      }
+    };
+    rafRef.current = requestAnimationFrame(tick);
+  };
+
+  // ── Open / navigate in response to the activeId prop ──────────────────────
+  // Mirrors the activeId prop into local state so the carousel survives the close
+  // animation; the synchronous setState is intentional (prop → local mirror).
+  useEffect(() => {
+    if (activeId == null) return; // close is driven by triggerClose
+    if (currentId == null) {
+      // Opening from the calendar — set position instantly; FLIP runs in the layout effect.
+      positionRef.current = indexById.get(activeId) ?? 0;
+      pendingFlipRef.current = !!sourceRect;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setCurrentId(activeId);
+    } else if (activeId !== currentId) {
+      // Navigating within the open carousel.
+      setCurrentId(activeId);
+      animateTo(indexById.get(activeId) ?? 0);
+    }
+  }, [activeId]);
+
+  // FLIP open: fly the active slide from the clicked calendar card to centre.
   useLayoutEffect(() => {
-    if (!currentFind || !sourceRect || !cardRef.current) return;
-    const el = cardRef.current;
+    if (currentId == null) return;
+    const el = slideRefs.current.get(currentId);
+    // New active card starts read from the top.
+    vfracRef.current = 0;
+    layoutAll();
+    if (!pendingFlipRef.current) return;
+    pendingFlipRef.current = false;
+    if (!el || !sourceRect) return;
     const r = el.getBoundingClientRect();
     if (!r.width) return;
-
     const dx = (sourceRect.left + sourceRect.width / 2) - (r.left + r.width / 2);
     const dy = (sourceRect.top + sourceRect.height / 2) - (r.top + r.height / 2);
     const s = Math.min(sourceRect.width / r.width, 0.6);
-    openScaleRef.current = s;
-
+    // Override the CSS-var-driven transform with an inline FLIP, then clear it so
+    // the stylesheet resumes control once the card reaches rest (the resting
+    // transform includes the same translateY(vy), so there's no jump on hand-off).
     el.style.transition = 'none';
-    el.style.transform = `translate(${dx}px,${dy}px) scale(${s})`;
+    el.style.transform = `translate(-50%, -50%) translate(${dx}px, ${dy}px) scale(${s})`;
+    el.style.opacity = '0';
     el.getBoundingClientRect();
-    el.style.transition = `transform ${ANIM_MS}ms ${EASING}`;
-    el.style.transform = '';
-  }, [currentFind, sourceRect]);
+    el.style.transition = `transform ${ANIM_MS}ms ${EASING}, opacity ${ANIM_MS}ms ease`;
+    el.style.transform = 'translate(-50%, -50%)';
+    el.style.opacity = '1';
+    setTimeout(() => {
+      el.style.transition = '';
+      el.style.transform = '';
+      el.style.opacity = '';
+    }, ANIM_MS);
+  }, [currentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    document.body.style.overflow = currentFind ? 'hidden' : '';
+    document.body.style.overflow = currentId ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
-  }, [currentFind]);
+  }, [currentId]);
 
+  // Mark a card "settled" once it has been centred for a beat — gates map mounting.
   useEffect(() => {
-    if (imperativeCloseRef) imperativeCloseRef.current = currentFind ? triggerClose : null;
-  }); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!currentId) { setSettledId(null); return; }
+    const t = setTimeout(() => setSettledId(currentId), ANIM_MS + 80);
+    return () => clearTimeout(t);
+  }, [currentId]);
 
+  // Keep the active card's overhang/pan correct as it changes size (e.g. its image
+  // loads and the card grows). With the read fraction fixed, re-deriving --vy keeps
+  // the card's top pinned in place — no vertical shift while it settles.
   useEffect(() => {
-    if (!currentFind) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') triggerClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!currentId || typeof ResizeObserver === 'undefined') return;
+    const card = cardEl(slideRefs.current.get(currentId));
+    if (!card) return;
+    const ro = new ResizeObserver(() => layoutAll());
+    ro.observe(card);
+    return () => ro.disconnect();
+  }, [currentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const triggerClose = () => {
-    if (animatingRef.current) return;
-    animatingRef.current = true;
+    if (animatingCloseRef.current) return;
+    animatingCloseRef.current = true;
+    cancelAnimationFrame(rafRef.current);
 
-    const cardEl = cardRef.current;
-    const bdEl = backdropRef.current;
+    const el = currentId ? slideRefs.current.get(currentId) : null;
+    const bd = backdropRef.current;
     const target = getTargetRect?.();
 
     onClose();
 
-    if (cardEl && target) {
-      const r = cardEl.getBoundingClientRect();
+    if (el && target) {
+      const r = el.getBoundingClientRect();
       const dx = (target.left + target.width / 2) - (r.left + r.width / 2);
       const dy = (target.top + target.height / 2) - (r.top + r.height / 2);
-      const s = openScaleRef.current;
-      const rot = markerRotation(currentFind!.id, 0) * 0.5;
-
-      cardEl.style.transition = `transform ${ANIM_MS}ms ${EASING}, opacity ${Math.round(ANIM_MS * 0.5)}ms ease ${Math.round(ANIM_MS * 0.5)}ms`;
-      cardEl.style.transform = `translate(${dx}px,${dy}px) rotate(${rot}deg) scale(${s})`;
-      cardEl.style.opacity = '0';
-    } else if (cardEl) {
-      cardEl.style.transition = `opacity ${ANIM_MS}ms ease, transform ${ANIM_MS}ms ease`;
-      cardEl.style.opacity = '0';
-      cardEl.style.transform = 'scale(0.92)';
+      const s = Math.min(target.width / r.width, 0.6);
+      const rot = markerRotation(currentId!, 0) * 0.5;
+      el.style.transition = `transform ${ANIM_MS}ms ${EASING}, opacity ${Math.round(ANIM_MS * 0.5)}ms ease ${Math.round(ANIM_MS * 0.5)}ms`;
+      el.style.transform = `translate(-50%, -50%) translate(${dx}px, ${dy}px) rotate(${rot}deg) scale(${s})`;
+      el.style.opacity = '0';
+    } else if (el) {
+      el.style.transition = `opacity ${ANIM_MS}ms ease, transform ${ANIM_MS}ms ease`;
+      el.style.opacity = '0';
     }
-
-    if (bdEl) {
-      bdEl.style.transition = `opacity ${ANIM_MS}ms ease`;
-      bdEl.style.opacity = '0';
+    // Fade neighbours out.
+    slideRefs.current.forEach((node, id) => {
+      if (id === currentId) return;
+      node.style.transition = `opacity ${ANIM_MS}ms ease`;
+      node.style.opacity = '0';
+    });
+    if (bd) {
+      bd.style.transition = `opacity ${ANIM_MS}ms ease`;
+      bd.style.opacity = '0';
     }
 
     setTimeout(() => {
-      setCurrentFind(null);
-      animatingRef.current = false;
+      setCurrentId(null);
+      animatingCloseRef.current = false;
     }, ANIM_MS);
   };
 
-  if (!currentFind) return null;
+  useEffect(() => {
+    if (imperativeCloseRef) imperativeCloseRef.current = currentId ? triggerClose : null;
+  });
 
-  const leafGroups = groupLeafCounts(currentFind.clovers);
-  const hasLocation = currentFind.lat !== null && currentFind.lng !== null && currentFind.location_privacy !== 'private';
-  const isOwner = userId === currentFind.user_id;
-  const isLandscape = photoRatios ? photoRatios.natural > 1 : false;
+  const navigate = (target: number) => {
+    const clamped = clamp(target, 0, finds.length - 1);
+    const f = finds[clamped];
+    if (!f || f.id === currentId) return;
+    onNavigate?.(f);
+  };
 
-  const subject = isOwner ? 'You' : (username ?? null);
-  const locationClause = currentFind.location_name && currentFind.location_privacy !== 'private'
-    ? ` in ${currentFind.location_name.split(',').slice(0, 2).join(',').trim()}`
-    : '';
-  const findNarrative = currentFind.clovers.length > 0
-    ? `${subject ? subject + ' found' : 'Found'} ${cloverDescription(currentFind.clovers)}${locationClause} on the ${timeOfDay(currentFind.found_at)} of ${formatNarrativeDate(currentFind.found_at)}.`
-    : null;
-  const luckLine = luckNarrative(currentFind);
+  // ── Keyboard ──────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!currentId) return;
+    const onKey = (e: KeyboardEvent) => {
+      switch (e.key) {
+        case 'Escape': triggerClose(); break;
+        case 'ArrowRight': case 'PageDown': e.preventDefault(); navigate(activeIndex + 1); break;
+        case 'ArrowLeft': case 'PageUp': e.preventDefault(); navigate(activeIndex - 1); break;
+        case 'Home': e.preventDefault(); navigate(0); break;
+        case 'End': e.preventDefault(); navigate(finds.length - 1); break;
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  });
+
+  // ── Wheel + touch on the viewport ───────────────────────────────────────────
+  useEffect(() => {
+    const vp = viewportRef.current;
+    if (!vp || !currentId) return;
+
+    const activeSlide = () => (currentId ? slideRefs.current.get(currentId) : null);
+    const max = finds.length - 1;
+    let snapTimer = 0;
+
+    const applyVy = () =>
+      activeSlide()?.style.setProperty('--vy', `${vyFor(cardEl(activeSlide()), vfracRef.current)}px`);
+
+    // Pan a too-tall card vertically (move the whole card up/down through the window).
+    // Returns true if it consumed the gesture (i.e. the card had room left to move).
+    const panBy = (deltaY: number) => {
+      const over = overhang(cardEl(activeSlide()));
+      if (over <= 0) return false;
+      const next = clamp(vfracRef.current + deltaY / (2 * over), 0, 1);
+      if (next === vfracRef.current) return false; // already flush in this direction
+      vfracRef.current = next;
+      applyVy();
+      return true;
+    };
+
+    // Limit a single gesture to one card past centre, with a rubber-band beyond that
+    // and beyond the list ends — so the window always has a card to reveal.
+    const softClamp = (raw: number) => {
+      const loB = Math.max(0, activeIndex - 1);
+      const hiB = Math.min(max, activeIndex + 1);
+      if (raw < loB) return loB + (raw - loB) * 0.3;
+      if (raw > hiB) return hiB + (raw - hiB) * 0.3;
+      return raw;
+    };
+
+    const commitSnap = () => {
+      const target = clamp(Math.round(positionRef.current), 0, max);
+      if (target === activeIndex) animateTo(target); // settle back to centre
+      else navigate(target);
+    };
+
+    const onWheel = (e: WheelEvent) => {
+      // Use whichever axis dominates so horizontal trackpad swipes (deltaX) page too.
+      const horizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+      const atRest = Math.abs(positionRef.current - activeIndex) < 0.001;
+      // While centred, a vertical wheel first pans a too-tall card up/down; only
+      // once it's flush against the window edge does further scrolling page.
+      if (!horizontal && atRest && panBy(e.deltaY)) {
+        e.preventDefault();
+        return;
+      }
+      e.preventDefault();
+      cancelAnimationFrame(rafRef.current);
+      const delta = horizontal ? e.deltaX : e.deltaY;
+      positionRef.current = softClamp(positionRef.current + delta / WHEEL_DISTANCE);
+      layoutAll();
+      clearTimeout(snapTimer);
+      snapTimer = window.setTimeout(commitSnap, SNAP_IDLE_MS);
+    };
+
+    let startX = 0, startY = 0, basePos = 0, baseVfrac = 0, axis: 'x' | 'y' | null = null;
+    const onTouchStart = (e: TouchEvent) => {
+      const t = e.touches[0];
+      startX = t.clientX; startY = t.clientY;
+      basePos = positionRef.current; baseVfrac = vfracRef.current; axis = null;
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      const t = e.touches[0];
+      const dx = t.clientX - startX, dy = t.clientY - startY;
+      if (axis === null) {
+        if (Math.abs(dx) > Math.abs(dy) + 4) axis = 'x';
+        else if (Math.abs(dy) > Math.abs(dx) + 4) axis = 'y';
+        else return;
+      }
+      if (axis === 'x') {
+        // Horizontal swipe pages between cards.
+        e.preventDefault();
+        cancelAnimationFrame(rafRef.current);
+        positionRef.current = softClamp(basePos - dx / step());
+        layoutAll();
+      } else {
+        // Vertical drag pans a too-tall card (drag down → reveal top).
+        const over = overhang(cardEl(activeSlide()));
+        if (over <= 0) return;
+        e.preventDefault();
+        vfracRef.current = clamp(baseVfrac - dy / (2 * over), 0, 1);
+        applyVy();
+      }
+    };
+    const onTouchEnd = () => {
+      if (axis === 'x') commitSnap();
+      axis = null;
+    };
+
+    vp.addEventListener('wheel', onWheel, { passive: false });
+    vp.addEventListener('touchstart', onTouchStart, { passive: true });
+    vp.addEventListener('touchmove', onTouchMove, { passive: false });
+    vp.addEventListener('touchend', onTouchEnd);
+    return () => {
+      clearTimeout(snapTimer);
+      vp.removeEventListener('wheel', onWheel);
+      vp.removeEventListener('touchstart', onTouchStart);
+      vp.removeEventListener('touchmove', onTouchMove);
+      vp.removeEventListener('touchend', onTouchEnd);
+    };
+  });
+
+  // Re-layout on resize (step + overhang depend on viewport size).
+  useEffect(() => {
+    const onResize = () => layoutAll();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  });
+
+  if (currentId == null || finds.length === 0) return null;
+
+  // Render a window of slides around the active card (heavy maps stay scoped to the centre).
+  const WINDOW = 2;
+  const lo = Math.max(0, activeIndex - WINDOW);
+  const hi = Math.min(finds.length - 1, activeIndex + WINDOW);
+  const windowFinds = finds.slice(lo, hi + 1);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+    <div ref={viewportRef} className="find-carousel-viewport fixed inset-0 z-50 overflow-hidden touch-none">
       {/* Backdrop */}
       <div
         ref={backdropRef}
@@ -240,250 +431,37 @@ export function FindCardDialog({ find, userId, username, onClose, sourceRect, ge
         onClick={triggerClose}
       />
 
-      {/* Card */}
-      <div
-        ref={cardRef}
-        className={`find-card ${isLandscape ? 'landscape' : 'portrait'} relative z-10 rounded-xl shadow-2xl`}
-      >
-        {/* Inner wrapper clips image corners and markers without clipping the close button */}
-        <div className="find-card-inner rounded-3xl overflow-hidden">
-        {isLandscape ? (
-          /* Landscape layout: photo full-width on top, text + map in two columns below */
-          <div className="grid grid-cols-1">
-            {/* Photo row */}
-            <div className="relative">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                ref={photoImgRef}
-                src={currentFind.photo_url}
-                alt=""
-                className="w-full block"
-                onLoad={handlePhotoLoad}
-              />
-
-              {currentFind.clovers.map((clover, i) => {
-                if (clover.annotation_x === null || clover.annotation_y === null) return null;
-                const radius = clover.annotation_radius ?? 0.09;
-                return (
-                  <div
-                    key={clover.id}
-                    className="absolute select-none pointer-events-none"
-                    style={{
-                      left: `${clover.annotation_x * 100}%`,
-                      top: `${clover.annotation_y * 100}%`,
-                      width: `${radius * 200}%`,
-                      aspectRatio: '1',
-                      filter: 'drop-shadow(0 1px 6px rgba(0,0,0,0.5))',
-                      transform: 'translate(-50%, -50%)',
-                    }}
-                  >
-                    <CloverMarker
-                      leafCount={clover.leaf_count}
-                      rotation={clover.annotation_rotation ?? markerRotation(currentFind.id, i)}
-                    />
-                  </div>
-                );
-              })}
-
-              {leafGroups.length > 0 && (
-                <div className="find-card-leaf-label absolute bottom-0 left-0 px-3 py-3 font-semibold">
-                  <span className="flex gap-2">
-                    {leafGroups.map(({ count, num }, i) => (
-                      <span key={i} className="flex items-center gap-0.5">
-                        <svg width="1.1em" height="1.1em" viewBox="0 0 100 100" aria-hidden="true" className="fill-current">
-                          <path d={cloverPath(count)} />
-                        </svg>
-                        {num > 1 && <span>×{num}</span>}
-                      </span>
-                    ))}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Text + map row */}
-            <div className="grid grid-cols-1 sm:grid-cols-2">
-              {/* Notes / narrative */}
-              <div className="flex flex-col gap-3 px-5 py-5">
-                {currentFind.notes && (
-                  <p className="text-base font-medium leading-snug" style={{ color: 'var(--color-text-primary)' }}>
-                    {currentFind.notes}
-                  </p>
-                )}
-                {findNarrative && (
-                  <p className="text-base leading-relaxed" style={{ color: 'var(--color-text-secondary)' }}>
-                    {findNarrative}
-                  </p>
-                )}
-                {luckLine && (
-                  <p className="text-base leading-relaxed" style={{ color: 'var(--color-text-secondary)' }}>
-                    {luckLine}
-                  </p>
-                )}
-                {isOwner && (
-                  <Link
-                    href={`/account/finds/${currentFind.id}/edit`}
-                    className="flex items-center gap-1.5 text-sm font-medium self-start hover:opacity-80 transition-opacity"
-                    style={{ color: 'var(--color-accent)' }}
-                  >
-                    <Pencil size={13} strokeWidth={2.5} />
-                    Edit
-                  </Link>
-                )}
-                {adminControls}
-              </div>
-
-              {/* Map / location */}
-              <div className="find-card-map relative overflow-hidden">
-                {hasLocation && currentFind.lat !== null && currentFind.lng !== null ? (
-                  <>
-                    <FindMap lat={currentFind.lat} lng={currentFind.lng} leafCount={currentFind.clovers.reduce((m, c) => Math.max(m, c.leaf_count), 4)} findId={currentFind.id} theme={theme} />
-                    {currentFind.location_name && (
-                      <div className="find-card-location-pill absolute bottom-0 left-0 right-0 flex items-center gap-1.5 px-4 py-3 text-sm font-medium">
-                        <MapPin size={13} strokeWidth={2} className="fill-current shrink-0" />
-                        <span className="truncate">{currentFind.location_name}</span>
-                      </div>
-                    )}
-                  </>
-                ) : hasLocation && currentFind.location_name ? (
-                  <div className="flex items-center gap-1.5 px-5 py-5 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-                    <MapPin size={13} strokeWidth={2} className="fill-current shrink-0" />
-                    <span>{currentFind.location_name}</span>
-                  </div>
-                ) : null}
-              </div>
-            </div>
+      {/* Track */}
+      <div className="find-carousel-track absolute inset-0">
+        {windowFinds.map((f) => (
+          <div
+            key={f.id}
+            ref={(el) => registerSlide(el, f.id)}
+            className="find-carousel-slide"
+          >
+            <FindCardContent
+              find={f}
+              userId={userId}
+              username={username}
+              isActive={f.id === settledId}
+              initialOrientation={orientations?.[f.id]}
+              theme={theme}
+              adminControls={f.id === currentId ? adminControls : undefined}
+            />
           </div>
-        ) : (
-          /* Portrait layout: photo left (right-handed) or right (left-handed), text + map stacked on other side */
-          <div className="find-card-portrait grid grid-cols-1 sm:grid-cols-2">
-
-            {/* Photo column — spans both rows on sm+ */}
-            <div className="find-card-photo relative sm:row-span-2">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                ref={photoImgRef}
-                src={currentFind.photo_url}
-                alt=""
-                className="w-full h-full object-cover block"
-                onLoad={handlePhotoLoad}
-              />
-
-              {currentFind.clovers.map((clover, i) => {
-                if (clover.annotation_x === null || clover.annotation_y === null) return null;
-                const rawRadius = clover.annotation_radius ?? 0.09;
-                const { cx, cy, radius } = photoRatios
-                  ? {
-                      ...coverCoords(clover.annotation_x, clover.annotation_y, photoRatios.natural, photoRatios.container),
-                      radius: coverRadius(rawRadius, photoRatios.natural, photoRatios.container),
-                    }
-                  : { cx: clover.annotation_x, cy: clover.annotation_y, radius: rawRadius };
-                return (
-                  <div
-                    key={clover.id}
-                    className="absolute select-none pointer-events-none"
-                    style={{
-                      left: `${cx * 100}%`,
-                      top: `${cy * 100}%`,
-                      width: `${radius * 200}%`,
-                      aspectRatio: '1',
-                      filter: 'drop-shadow(0 1px 6px rgba(0,0,0,0.5))',
-                      transform: 'translate(-50%, -50%)',
-                    }}
-                  >
-                    <CloverMarker
-                      leafCount={clover.leaf_count}
-                      rotation={clover.annotation_rotation ?? markerRotation(currentFind.id, i)}
-                    />
-                  </div>
-                );
-              })}
-
-              {leafGroups.length > 0 && (
-                <div className="find-card-leaf-label absolute bottom-0 left-0 px-3 py-3 font-semibold">
-                  <span className="flex gap-2">
-                    {leafGroups.map(({ count, num }, i) => (
-                      <span key={i} className="flex items-center gap-0.5">
-                        <svg width="1.1em" height="1.1em" viewBox="0 0 100 100" aria-hidden="true" className="fill-current">
-                          <path d={cloverPath(count)} />
-                        </svg>
-                        {num > 1 && <span>×{num}</span>}
-                      </span>
-                    ))}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Notes / narrative column */}
-            <div className="find-card-notes flex flex-col gap-3 px-5 py-5">
-              {currentFind.notes && (
-                <p className="text-base font-medium leading-snug" style={{ color: 'var(--color-text-primary)' }}>
-                  {currentFind.notes}
-                </p>
-              )}
-
-              {findNarrative && (
-                <p className="text-base " style={{ color: 'var(--color-text-secondary)' }}>
-                  {findNarrative}
-                </p>
-              )}
-
-              {luckLine && (
-                <p className="text-base " style={{ color: 'var(--color-text-secondary)' }}>
-                  {luckLine}
-                </p>
-              )}
-
-              {isOwner && (
-                <Link
-                  href={`/account/finds/${currentFind.id}/edit`}
-                  className="flex items-center gap-1.5 text-sm font-medium self-start hover:opacity-80 transition-opacity"
-                  style={{ color: 'var(--color-accent)' }}
-                >
-                  <Pencil size={13} strokeWidth={2.5} />
-                  Edit
-                </Link>
-              )}
-
-              {adminControls}
-            </div>
-
-            {/* Map / location column */}
-            <div className="find-card-map relative overflow-hidden">
-              {hasLocation && currentFind.lat !== null && currentFind.lng !== null ? (
-                <>
-                  <FindMap lat={currentFind.lat} lng={currentFind.lng} leafCount={currentFind.clovers.reduce((m, c) => Math.max(m, c.leaf_count), 4)} findId={currentFind.id} theme={theme} />
-                  {currentFind.location_name && (
-                    <div className="find-card-location-pill absolute bottom-0 left-0 right-0 flex items-center gap-1.5 px-4 py-3 text-sm font-medium">
-                      <MapPin size={13} strokeWidth={2} className="fill-current shrink-0" />
-                      <span className="truncate">{currentFind.location_name}</span>
-                    </div>
-                  )}
-                </>
-              ) : hasLocation && currentFind.location_name ? (
-                <div className="flex items-center gap-1.5 px-5 py-5 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-                  <MapPin size={13} strokeWidth={2} className="fill-current shrink-0" />
-                  <span>{currentFind.location_name}</span>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        )}
-
-        </div>{/* end inner clipping wrapper */}
-
-        {/* Close button — outside the clipping wrapper so it breaks out of the card corner */}
-        <XCloseIcon
-          onClick={triggerClose}
-          size={32}
-          strokeWidth={2.08}
-          stroke="var(--color-close)"
-          fill="color-mix(in srgb, var(--color-close) 25%, var(--color-background) 75%)"
-          className="absolute -top-2 -right-2 hover:opacity-80 transition-opacity cursor-pointer drop-shadow-2xl"
-          aria-label="Close"
-        />
+        ))}
       </div>
+
+      {/* Close button — single, fixed to the viewport corner */}
+      <XCloseIcon
+        onClick={triggerClose}
+        size={32}
+        strokeWidth={2.08}
+        stroke="var(--color-close)"
+        fill="color-mix(in srgb, var(--color-close) 25%, var(--color-background) 75%)"
+        className="absolute top-3 right-3 z-[200] hover:opacity-80 transition-opacity cursor-pointer drop-shadow-2xl"
+        aria-label="Close"
+      />
     </div>
   );
 }

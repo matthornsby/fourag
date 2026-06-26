@@ -163,8 +163,10 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
   // Measure actual row height (cell + gap) from the rendered grid for pixel-perfect label alignment.
   const [cellHeightPx, setCellHeightPx] = useState(0);
   const [rowGapPx, setRowGapPx] = useState(0);
+  const [dowRowHeightPx, setDowRowHeightPx] = useState(0);
   const gridRef = useRef<HTMLDivElement>(null);
   const probeRef = useRef<HTMLDivElement>(null);
+  const dowProbeRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
     const update = () => setColCount(window.innerWidth < 768 ? 1 : 7);
@@ -173,24 +175,25 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
     return () => window.removeEventListener('resize', update);
   }, []);
 
-  // Derive exact cell height + row gap from the live grid so month label wrappers align perfectly.
+  // Derive exact cell height, row gap, and day-of-week row height from the live grid.
   useLayoutEffect(() => {
     const grid = gridRef.current;
     const probe = probeRef.current;
     if (!grid || !probe) return;
     const measure = () => {
       const cellH = probe.getBoundingClientRect().height;
-      // getComputedStyle resolves clamp() to a px value
       const gap = parseFloat(getComputedStyle(grid).rowGap) || 0;
       setCellHeightPx(cellH);
       setRowGapPx(gap);
+      const dowEl = dowProbeRef.current;
+      if (dowEl) setDowRowHeightPx(dowEl.getBoundingClientRect().height);
     };
     const ro = new ResizeObserver(measure);
     ro.observe(grid);
     return () => ro.disconnect();
   }, []);
 
-  useEffect(() => {
+useEffect(() => {
     document.documentElement.dataset.orientation =
       photoSide === 'left' ? 'right-handed' : 'left-handed';
   }, [photoSide]);
@@ -262,14 +265,13 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
     return () => window.removeEventListener('popstate', onPopstate);
   }, []);
 
-  const openFind = useCallback((find: Find & { clovers: Clover[] }, el: HTMLElement) => {
-    activeCardRef.current = el;
-    setSourceRect(el.getBoundingClientRect());
-    setSelectedFind(find);
+  const findUrl = useCallback((find: Find & { clovers: Clover[] }) => {
     const slug = find.users?.username ?? basePath.replace(/^\//, '');
-    const findUrl = slug ? `/${slug.toLowerCase()}/find/${find.id}` : `${basePath}/find/${find.id}`;
-    history.pushState({ findId: find.id }, '', findUrl);
+    return slug ? `/${slug.toLowerCase()}/find/${find.id}` : `${basePath}/find/${find.id}`;
+  }, [basePath]);
 
+  const applyFindMeta = useCallback((find: Find & { clovers: Clover[] }) => {
+    const slug = find.users?.username ?? basePath.replace(/^\//, '');
     const displayName = !slug || slug === 'anonymous' ? 'Someone' : slug.charAt(0).toUpperCase() + slug.slice(1);
     const titleText = `${displayName ? displayName + ' found ' : 'Found '}${cloverTitle(find.clovers)} ✤ Fourag`;
     const tod = findTimeOfDay(find.found_at);
@@ -283,6 +285,22 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
     setMeta('property', 'og:description', descText);
     if (find.photo_url) setMeta('property', 'og:image', find.photo_url);
   }, [basePath]);
+
+  const openFind = useCallback((find: Find & { clovers: Clover[] }, el: HTMLElement) => {
+    activeCardRef.current = el;
+    setSourceRect(el.getBoundingClientRect());
+    setSelectedFind(find);
+    history.pushState({ findId: find.id }, '', findUrl(find));
+    applyFindMeta(find);
+  }, [findUrl, applyFindMeta]);
+
+  // Navigate to a different find inside the open carousel: track URL + meta,
+  // but keep activeCardRef (FLIP source/target) on the originally-clicked card.
+  const navigateFind = useCallback((find: Find & { clovers: Clover[] }) => {
+    setSelectedFind(find);
+    history.replaceState({ findId: find.id }, '', findUrl(find));
+    applyFindMeta(find);
+  }, [findUrl, applyFindMeta]);
 
   const getTargetRect = useCallback(() =>
     activeCardRef.current?.getBoundingClientRect() ?? null
@@ -430,6 +448,9 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
     <div className="flex gap-0">
       {/* Month label column — separate from grid so sticky works via flex-height sections */}
       <div className="cal-month-col">
+          {colCount > 1 && dowRowHeightPx > 0 && (
+            <div style={{ height: dowRowHeightPx + rowGapPx, flexShrink: 0 }} />
+          )}
           {monthLabelData.map(({ date, numRows }, idx) => {
             // Pixel-exact height: numRows × (cellH + gap), minus one gap on the last section.
             const rowH = cellHeightPx + rowGapPx;
@@ -448,6 +469,7 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
           })}
       </div>
       {/* Calendar grid */}
+      <div className="cal-grid-col">
       <div
         ref={gridRef}
         className="cal-grid grid"
@@ -457,6 +479,22 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
           gap: 'var(--cal-gap)',
         } as React.CSSProperties}
       >
+        {/* Day-of-week header row — row 1, only in 7-column layout */}
+        {colCount > 1 && (() => {
+          const ALL_ABBR = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+          const weekDays = weekStart === 0 ? ALL_ABBR : [...ALL_ABBR.slice(1), ALL_ABBR[0]];
+          return weekDays.map((abbr, idx) => (
+            <div
+              key={`dow-${abbr}`}
+              ref={idx === 0 ? dowProbeRef : undefined}
+              className={`cal-dow-label day-num-${idx + 1}`}
+              style={{ gridRowStart: 1 }}
+            >
+              {abbr}
+            </div>
+          ));
+        })()}
+
         {/* Circle pass — rendered first so cells sit on top in DOM stacking order */}
         {reversedCells.map((date, i) => {
           if (!date) return null;
@@ -470,7 +508,7 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
               key={`circle-${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`}
               className={colCount > 1 ? `day-num-${colIndex} pointer-events-none cal-find-circle` : 'pointer-events-none cal-find-circle'}
               style={{
-                gridRowStart: rowIndex + 1,
+                gridRowStart: rowIndex + 2,
                 ...(colCount === 1 && { gridColumn: 1 }),
                 width: '100%',
                 height: 0,
@@ -504,7 +542,7 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
             <div
               key={`blank-${i}`}
               className={`aspect-square day-num-${colIndex}`}
-              style={{ gridRowStart: rowIndex + 1 }}
+              style={{ gridRowStart: rowIndex + 2 }}
             />
           );
 
@@ -523,7 +561,7 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
               ref={i === 0 ? probeRef : undefined}
               className={['day-cell', `day-num-${colIndex}`, isWeekend && 'weekend', isToday && 'today'].filter(Boolean).join(' ')}
               style={{
-                gridRowStart: rowIndex + 1,
+                gridRowStart: rowIndex + 2,
                 '--day-bg': `color-mix(in srgb, var(--color-accent) ${opacity * 100 * .75}%, var(--color-surface))`,
               } as React.CSSProperties}
             >
@@ -554,6 +592,7 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
 
           return dayCell;
         })}
+      </div>
       </div>
 
       {/*
@@ -663,7 +702,7 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
       </div>
     </div>
 
-    <FindCardDialog find={selectedFind} userId={userId} username={username} onClose={closeFind} sourceRect={sourceRect} getTargetRect={getTargetRect} imperativeCloseRef={dialogCloseRef} />
+    <FindCardDialog finds={sortedFinds} activeId={selectedFind?.id ?? null} userId={userId} username={username} onClose={closeFind} onNavigate={navigateFind} sourceRect={sourceRect} getTargetRect={getTargetRect} imperativeCloseRef={dialogCloseRef} orientations={orientations} />
 
     {/* Temporary controls palette */}
     {process.env.NODE_ENV === 'development' && <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 px-1.5 py-1.5 rounded-2xl shadow-xl text-xs font-medium"

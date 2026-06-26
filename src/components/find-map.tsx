@@ -265,7 +265,10 @@ export function FindMap({ lat, lng, leafCount, findId, theme }: Props) {
     return () => {
       cancelled = true
       markerRef.current?.remove()
-      mapRef.current?.remove()
+      // Removing a map that is still loading its style aborts in-flight fetches and
+      // throws a benign AbortError; swallow it so rapid mount/unmount (e.g. carousel
+      // navigation) doesn't surface noise in the dev overlay or console.
+      try { mapRef.current?.remove() } catch { /* aborted during load */ }
       mapRef.current = null
       markerRef.current = null
     }
