@@ -384,7 +384,8 @@ body {
 
 .day-cell {
   --cell-border-radius: calc(var(--cal-gap) * 1.7);
-  @apply relative aspect-square cursor-default overflow-hidden;
+  @apply relative aspect-square overflow-hidden;
+  cursor: default;
   grid-row-end: auto;
   grid-column-end: auto;
   border-radius: var(--cell-border-radius);
@@ -460,6 +461,19 @@ body {
     /* mask: linear-gradient(-45deg, rgba(0,0,0,.3) var(--chamfer), black var(--chamfer)); */
   }
 
+  &.has-find {
+    cursor: pointer;
+  }
+
+  &.has-find:hover {
+    filter: brightness(1.15);
+  }
+
+  &.has-find:active {
+    filter: brightness(0.9);
+    scale: 0.95;
+  }
+
   .day-cell-label {
     @apply absolute top-0 right-0 leading-none rounded-full;
     font-size: calc(var(--cal-gap) * 2);
@@ -488,9 +502,13 @@ body {
   
   /* Single-column grid on mobile — labels live in the external cal-month-col */
   /* Use [data-orientation] to match desktop specificity and win the override */
+  [data-orientation="right-handed"] .cal-grid-col,
+  [data-orientation="left-handed"] .cal-grid-col {
+    flex: 0 0 auto;
+  }
+
   [data-orientation="right-handed"] .cal-grid,
   [data-orientation="left-handed"] .cal-grid {
-    flex: 0 0 auto;
     grid-template-columns: 3.5rem;
   }
 
@@ -505,8 +523,7 @@ body {
   [data-orientation="left-handed"] {
     & .day-num-1, & .day-num-2, & .day-num-3, & .day-num-4,
     & .day-num-5, & .day-num-6, & .day-num-7 {
-      grid-column: 1 !important;
-      grid-row: auto !important;
+      grid-column-start: 1 !important;
     }
   }
 

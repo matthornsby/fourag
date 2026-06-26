@@ -150,6 +150,7 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
   const [photoSide, setPhotoSide] = useState<'left' | 'right'>('left');
   const [weekStart, setWeekStart] = useState<0 | 1>(weekStartsOn);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [evenSentinels, setEvenSentinels] = useState(true);
   const [colCount, setColCount] = useState(7);
   const [selectedFind, setSelectedFind] = useState<(Find & { clovers: Clover[] }) | null>(null);
   const [sourceRect, setSourceRect] = useState<DOMRect | null>(null);
@@ -168,8 +169,13 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
   const probeRef = useRef<HTMLDivElement>(null);
   const dowProbeRef = useRef<HTMLDivElement>(null);
 
+  const [viewportH, setViewportH] = useState(0);
+
   useLayoutEffect(() => {
-    const update = () => setColCount(window.innerWidth < 768 ? 1 : 7);
+    const update = () => {
+      setColCount(window.innerWidth < 768 ? 1 : 7);
+      setViewportH(window.innerHeight);
+    };
     update();
     window.addEventListener('resize', update);
     return () => window.removeEventListener('resize', update);
@@ -406,15 +412,30 @@ useEffect(() => {
   });
 
   // Compute the sentinel fraction (0–1 of total column height) for each find.
-  // Newest find in a row → fraction = row / totalRows (fires at row top).
-  // Each subsequent find in the same row → fraction increments by 1/(totalInRow*totalRows).
+  // Approximate column height from measured row metrics.
+  const rowH = cellHeightPx + rowGapPx;
+  const approxColH = totalRows * rowH + dowRowHeightPx + rowGapPx;
+  // Scrollable range within the column: how far the user can actually scroll before the
+  // page bottom is hit. Clamped to at least half the column so short calendars still work.
+  const usableH = approxColH > 0 ? Math.max(approxColH * 0.5, approxColH - viewportH) : 0;
+
   const findSentinelData = sortedFinds.map((find, idx) => {
+    if (evenSentinels) {
+      const N = sortedFinds.length;
+      // N photos need only N−1 transitions; the oldest persists after the last fires.
+      // Place transition i at (i+1)/N of the usable scroll range.
+      const isLast = idx === N - 1;
+      const fraction = isLast ? 2 : // sentinel beyond column — never triggered
+        approxColH > 0
+          ? (idx + 1) * usableH / (N * approxColH)
+          : (idx + 1) / N;
+      return { find, fraction };
+    }
     const row = findReversedRows[idx];
     const group = rowGroups.get(row)!;
-    const posInRow = group.indexOf(idx); // 0 = newest in this row
+    const posInRow = group.indexOf(idx);
     const totalInRow = group.length;
-    const fraction = (row + posInRow / totalInRow) / totalRows;
-    return { find, fraction };
+    return { find, fraction: (row + posInRow / totalInRow) / totalRows };
   });
 
   const TOP_N = 5;
@@ -445,7 +466,7 @@ useEffect(() => {
 
   return (
     <>
-    <div className="flex gap-0">
+    <div className="flex gap-0" style={viewportH > 0 ? { minHeight: viewportH * 1.5 } : undefined}>
       {/* Month label column — separate from grid so sticky works via flex-height sections */}
       <div className="cal-month-col">
           {colCount > 1 && dowRowHeightPx > 0 && (
@@ -554,16 +575,21 @@ useEffect(() => {
           const opacity = luckToOpacity(luck);
           const added = luckAddedOnDay(finds, date);
           const leafCount = dominantLeafCount(finds, date);
+          const topFind = sortedFinds.find(f => {
+            const fd = new Date(f.found_at);
+            return fd.getFullYear() === date.getFullYear() && fd.getMonth() === date.getMonth() && fd.getDate() === dayNum;
+          }) ?? null;
 
           const dayCell = (
             <div
               key={cellKey}
               ref={i === 0 ? probeRef : undefined}
-              className={['day-cell', `day-num-${colIndex}`, isWeekend && 'weekend', isToday && 'today'].filter(Boolean).join(' ')}
+              className={['day-cell', `day-num-${colIndex}`, isWeekend && 'weekend', isToday && 'today', topFind && 'has-find'].filter(Boolean).join(' ')}
               style={{
                 gridRowStart: rowIndex + 2,
                 '--day-bg': `color-mix(in srgb, var(--color-accent) ${opacity * 100 * .75}%, var(--color-surface))`,
               } as React.CSSProperties}
+              onClick={topFind ? e => openFind(topFind, e.currentTarget as HTMLElement) : undefined}
             >
               {/* Clover marker */}
               {leafCount !== null && added > 0 && (
@@ -738,6 +764,17 @@ useEffect(() => {
         className="px-3 py-1.5 rounded-xl transition-colors"
         style={{ background: weekStart === 0 ? 'color-mix(in srgb, var(--color-text-primary) 15%, transparent)' : 'transparent', color: 'var(--color-text-primary)' }}>
         Sun
+      </button>
+      <div className="w-px h-4 mx-1" style={{ background: 'color-mix(in srgb, var(--color-text-primary) 15%, transparent)' }} />
+      <button onClick={() => setEvenSentinels(true)}
+        className="px-3 py-1.5 rounded-xl transition-colors"
+        style={{ background: evenSentinels ? 'color-mix(in srgb, var(--color-text-primary) 15%, transparent)' : 'transparent', color: 'var(--color-text-primary)' }}>
+        Even scroll
+      </button>
+      <button onClick={() => setEvenSentinels(false)}
+        className="px-3 py-1.5 rounded-xl transition-colors"
+        style={{ background: !evenSentinels ? 'color-mix(in srgb, var(--color-text-primary) 15%, transparent)' : 'transparent', color: 'var(--color-text-primary)' }}>
+        Date scroll
       </button>
     </div>}
     </>

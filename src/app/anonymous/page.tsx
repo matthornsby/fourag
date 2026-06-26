@@ -29,11 +29,16 @@ export default async function AnonymousPage() {
   const typedFinds = (finds ?? []) as (Find & { clovers: Clover[] })[];
 
   const totalClovers = typedFinds.reduce((sum, f) => sum + (f.clovers ?? []).length, 0);
+  const currentYear = new Date().getFullYear();
+  const hasPreviousYear = typedFinds.some(f => new Date(f.found_at).getFullYear() < currentYear);
+  const thisYearClovers = typedFinds
+    .filter(f => new Date(f.found_at).getFullYear() === currentYear)
+    .reduce((sum, f) => sum + (f.clovers ?? []).length, 0);
   const earliestFind = typedFinds.length > 0
     ? typedFinds.reduce((earliest, f) => f.found_at < earliest ? f.found_at : earliest, typedFinds[0].found_at)
     : null;
   const sinceStr = earliestFind
-    ? new Date(earliestFind).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    ? new Date(earliestFind).toLocaleDateString('en-US', { month: 'long', ...(hasPreviousYear ? { year: 'numeric' } : {}) })
     : null;
 
   const bestCloverFind = typedFinds.reduce<{ leafCount: number; foundAt: string } | null>(
@@ -53,11 +58,16 @@ export default async function AnonymousPage() {
       })()
     : null;
 
-  const noun = totalClovers === 1 ? 'clover' : 'clovers';
+  const noun = (n: number) => n === 1 ? 'clover' : 'clovers';
+  const showSplit = hasPreviousYear && thisYearClovers > 0;
   const anonSentence = totalClovers > 0 && sinceStr
-    ? bestCloverFind && bestCloverFind.leafCount > 4 && bestCloverDateStr
-      ? `${totalClovers} ${noun} have been shared anonymously since ${sinceStr}, including a ${bestCloverFind.leafCount}-leaf clover on ${bestCloverDateStr}.`
-      : `${totalClovers} ${noun} have been shared anonymously since ${sinceStr}.`
+    ? (() => {
+        const hasBest = bestCloverFind && bestCloverFind.leafCount > 4 && bestCloverDateStr;
+        const including = hasBest ? `, including a ${bestCloverFind!.leafCount}-leaf clover on ${bestCloverDateStr}` : '';
+        if (showSplit)
+          return `${thisYearClovers} ${noun(thisYearClovers)} have been shared anonymously this year, and ${totalClovers} since ${sinceStr}${including}.`;
+        return `${totalClovers} ${noun(totalClovers)} have been shared anonymously since ${sinceStr}${including}.`;
+      })()
     : null;
 
   const profileHeader = (

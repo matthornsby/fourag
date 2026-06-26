@@ -249,6 +249,15 @@ export function FindMap({ lat, lng, leafCount, findId, theme }: Props) {
       })
 
       mapRef.current = map
+      // Registering an 'error' listener stops maplibre's default console logging. Removing
+      // a still-loading map (carousel navigation / close) aborts its in-flight tile/glyph
+      // requests, which Safari surfaces as a "Load failed" console error — swallow those
+      // benign aborts here while still surfacing anything unexpected.
+      map.on('error', (e) => {
+        const msg = (e as { error?: { message?: string } })?.error?.message ?? ''
+        if (/abort|load failed|signal|cancel|null|undefined/i.test(msg)) return
+        console.error('[map]', (e as { error?: unknown })?.error ?? e)
+      })
       map.addControl(new NavigationControl({ showCompass: false }), 'top-right')
 
       map.on('load', () => {
@@ -265,9 +274,6 @@ export function FindMap({ lat, lng, leafCount, findId, theme }: Props) {
     return () => {
       cancelled = true
       markerRef.current?.remove()
-      // Removing a map that is still loading its style aborts in-flight fetches and
-      // throws a benign AbortError; swallow it so rapid mount/unmount (e.g. carousel
-      // navigation) doesn't surface noise in the dev overlay or console.
       try { mapRef.current?.remove() } catch { /* aborted during load */ }
       mapRef.current = null
       markerRef.current = null

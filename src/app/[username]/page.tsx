@@ -105,11 +105,16 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     : null;
 
   const totalClovers = typedFinds.reduce((sum, f) => sum + (f.clovers ?? []).length, 0);
+  const currentYear = new Date().getFullYear();
+  const hasPreviousYear = typedFinds.some(f => new Date(f.found_at).getFullYear() < currentYear);
+  const thisYearClovers = typedFinds
+    .filter(f => new Date(f.found_at).getFullYear() === currentYear)
+    .reduce((sum, f) => sum + (f.clovers ?? []).length, 0);
   const earliestFind = typedFinds.length > 0
     ? typedFinds.reduce((earliest, f) => f.found_at < earliest ? f.found_at : earliest, typedFinds[0].found_at)
     : null;
   const sinceStr = earliestFind
-    ? new Date(earliestFind).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    ? new Date(earliestFind).toLocaleDateString('en-US', { month: 'long', ...(hasPreviousYear ? { year: 'numeric' } : {}) })
     : null;
 
   const profileHeader = (
@@ -125,10 +130,19 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
         {totalClovers > 0 && sinceStr && bestCloverFind && bestCloverDateStr && (
           <p className="text-base text-text-secondary">
             {isOwner
-              ? bestCloverFind.leafCount > 4
-                ? `You found a ${bestCloverFind.leafCount}-leaf clover on ${bestCloverDateStr} and have shared ${totalClovers} ${totalClovers === 1 ? 'clover' : 'clovers'} since ${sinceStr}.`
-                : `You have shared ${totalClovers} ${totalClovers === 1 ? 'clover' : 'clovers'} since ${sinceStr}.`
-              : cloverProfileSentence(typedProfile.pronouns, totalClovers, sinceStr, bestCloverFind.leafCount, bestCloverDateStr)}
+              ? (() => {
+                  const noun = (n: number) => n === 1 ? 'clover' : 'clovers'
+                  const showSplit = hasPreviousYear && thisYearClovers > 0
+                  if (bestCloverFind.leafCount > 4) {
+                    if (showSplit)
+                      return `You found a ${bestCloverFind.leafCount}-leaf clover on ${bestCloverDateStr}, have shared ${thisYearClovers} ${noun(thisYearClovers)} this year, and ${totalClovers} since ${sinceStr}.`
+                    return `You found a ${bestCloverFind.leafCount}-leaf clover on ${bestCloverDateStr} and have shared ${totalClovers} ${noun(totalClovers)} since ${sinceStr}.`
+                  }
+                  if (showSplit)
+                    return `You have shared ${thisYearClovers} ${noun(thisYearClovers)} this year, and ${totalClovers} since ${sinceStr}.`
+                  return `You have shared ${totalClovers} ${noun(totalClovers)} since ${sinceStr}.`
+                })()
+              : cloverProfileSentence(typedProfile.pronouns, totalClovers, sinceStr, bestCloverFind.leafCount, bestCloverDateStr, thisYearClovers, hasPreviousYear)}
           </p>
         )}
         {luckDateStr && (
