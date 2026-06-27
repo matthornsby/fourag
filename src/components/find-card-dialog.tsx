@@ -439,7 +439,7 @@ export function FindCardDialog({
   const windowFinds = finds.slice(lo, hi + 1);
 
   return (
-    <div ref={viewportRef} className="find-carousel-viewport fixed inset-0 z-50 overflow-hidden touch-none">
+    <div ref={viewportRef} className="find-carousel-viewport fixed inset-x-0 top-0 h-[100dvh] z-50 overflow-hidden touch-none">
       {/* Backdrop */}
       <div
         ref={backdropRef}

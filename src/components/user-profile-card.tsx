@@ -138,18 +138,7 @@ export function UserProfileCard({ profile, finds, luckEndDate, weekStart = 1, is
                 overflow: 'visible',
               }}
             >
-              <div
-                style={{
-                  position: 'absolute',
-                  width: `${diameter}%`,
-                  aspectRatio: '1',
-                  borderRadius: '50%',
-                  background: 'var(--color-find-circle)',
-                  left: '50%',
-                  top: 0,
-                  transform: 'translate(-50%, -50%)',
-                }}
-              />
+              <div className="cal-find-disc" style={{ width: `${diameter}%` }} />
             </div>
           )
         })}

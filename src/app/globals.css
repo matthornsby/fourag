@@ -384,6 +384,19 @@ body {
   padding-top: calc(var(--cal-gap, 4px) / 2);
 }
 
+/* The luck disc that sits behind a day cell. The wrapper (.cal-find-circle in the
+   calendar, or the profile mini-cal equivalent) positions it on the grid; the disc
+   itself is centred on the cell. Only its width is set inline (scales with luck). */
+.cal-find-disc {
+  position: absolute;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--color-find-circle);
+  left: 50%;
+  top: 0;
+  transform: translate(-50%, -50%);
+}
+
 
 @keyframes fade-in-view {
   0% {--label-opacity: 0; opacity: 0; transform: translateY(calc(var(--day-cell-y-offset-start) + 100%)) translateX(var(--day-cell-x-offset-start));  rotate: var(--day-cell-rotate-start); blur: var(--day-cell-blur-base); scale: .7 1.5;}
@@ -399,12 +412,15 @@ body {
 .day-cell {
   --cell-border-radius: calc(var(--cal-gap) * 1.7);
   @apply relative aspect-square overflow-hidden;
+
   cursor: default;
   grid-row-end: auto;
   grid-column-end: auto;
   border-radius: var(--cell-border-radius);
   background-image: linear-gradient(to bottom, var(--day-bg), color-mix(in srgb, var(--day-bg) 60%, transparent));
-  border-top: solid 1px color-mix(in srgb, contrast-color(var(--color-background)) 10%, transparent);
+  border: solid 1px color-mix(in srgb, var(--color-background) 20%, transparent);
+   /* border-top: solid 1px color-mix(in srgb, contrast-color(var(--color-background)) 10%, transparent);  */
+  
 
   --day-cell-blur-base: 30px;
   --day-cell-y-offset-base: 80%;

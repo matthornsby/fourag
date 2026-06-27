@@ -170,7 +170,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
   );
 
   return (
-    <main className="flex-1" style={{ overflowY: 'clip' }}>
+    <main className="flex-1" style={{ overflowX: 'clip', overflowY: 'clip' }}>
       <div className="mx-auto max-w-(--width-main-max) px-4 sm:px-6 py-8 flex flex-col gap-6">
         {typedFinds.length === 0 ? (
           <>
