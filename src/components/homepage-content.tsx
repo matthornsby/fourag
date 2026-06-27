@@ -69,7 +69,7 @@ export function HomepageContent({ userId, heroFinds, profiles, findsByUser, luck
             </div>
           </div>
           <Link
-            href={userId ? '/account/finds/new' : '/auth/sign-up'}
+            href="/account/finds/new"
             className="self-start button button-primary"
           >
             {userId ? SHARE_A_FIND : 'Share a find to join'}

@@ -7,7 +7,7 @@ import { SITE_TAGLINE } from "@/lib/constants";
 import { sanitizeFinds } from "@/lib/snap-coords";
 
 export const metadata: Metadata = {
-  title: `✤ Fourag: ${SITE_TAGLINE}`,
+  title: `Fourag: ${SITE_TAGLINE}`,
   description: "Fourag is a public patch for spreading the serendipity of four-leaf (or even more-leaf) clovers.",
 };
 
