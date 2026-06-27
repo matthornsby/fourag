@@ -5,6 +5,7 @@ import { UserAvatar } from "@/components/user-avatar";
 import { InterrobangIcon } from "@/components/icons/interrobang";
 import { FINDS_TERM } from "@/lib/constants";
 import type { Find, Clover } from "@/types";
+import { sanitizeFinds } from "@/lib/snap-coords";
 
 export const metadata: Metadata = {
   title: "Anonymous Finds ✤ Fourag",
@@ -26,7 +27,7 @@ export default async function AnonymousPage() {
     .eq("status", "approved")
     .order("found_at", { ascending: false });
 
-  const typedFinds = (finds ?? []) as (Find & { clovers: Clover[] })[];
+  const typedFinds = sanitizeFinds((finds ?? []) as (Find & { clovers: Clover[] })[], null);
 
   const totalClovers = typedFinds.reduce((sum, f) => sum + (f.clovers ?? []).length, 0);
   const currentYear = new Date().getFullYear();

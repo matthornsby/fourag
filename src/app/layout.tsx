@@ -1,16 +1,18 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { Geist, Geist_Mono, Fraunces } from "next/font/google";
+import { GoogleAnalytics } from "@next/third-parties/google";
 import "./globals.css";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { HashRedirect } from "@/components/hash-redirect";
 import { createClient } from "@/lib/supabase-server";
-import { isAdminUsername } from "@/lib/constants";
+import { PREFS_COOKIE, parsePrefs } from "@/lib/prefs";
 
 const fraunces = Fraunces({
   variable: "--font-fraunces",
   subsets: ["latin"],
-  axes: ["wght", "SOFT", "opsz"],
+  axes: ["SOFT", "opsz"],
 });
 
 const geistSans = Geist({
@@ -33,39 +35,48 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const cookieStore = await cookies();
+  const prefs = parsePrefs(cookieStore.get(PREFS_COOKIE)?.value);
+  const orientation = prefs.orientation === "left-handed" ? "left-handed" : "right-handed";
+
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   const username = user?.user_metadata?.username as string | undefined;
-  const isAdmin = isAdminUsername(username);
+
+  const gaId =
+    process.env.NODE_ENV === "production" ? process.env.NEXT_PUBLIC_GA_ID : undefined;
 
   let avatarUrl: string | null = null;
+  let isAdmin = false;
   if (user) {
     const { data: profile } = await supabase
       .from('users')
-      .select('avatar_url')
+      .select('avatar_url, is_admin')
       .eq('id', user.id)
       .single();
     avatarUrl = profile?.avatar_url ?? null;
+    isAdmin = profile?.is_admin ?? false;
   }
 
   return (
     <html
       lang="en"
       suppressHydrationWarning
+      data-orientation={orientation}
+      {...(prefs.theme === "light" ? { "data-theme": "light" } : {})}
       className={`${geistSans.variable} ${geistMono.variable} ${fraunces.variable} h-full antialiased`}
     >
       <body suppressHydrationWarning className="min-h-full flex flex-col">
-        {/* eslint-disable-next-line @next/next/no-before-interactive-script-outside-document */}
-        <script dangerouslySetInnerHTML={{ __html: `(function(){try{var p=JSON.parse(localStorage.getItem('fourag-prefs')||'{}'),e=document.documentElement;e.dataset.orientation=p.orientation||'right-handed';if(p.theme==='light')e.dataset.theme='light';}catch(x){document.documentElement.dataset.orientation='right-handed';}})();` }} />
         <div id="wallpaper" aria-hidden="true" />
         <HashRedirect />
         <SiteHeader user={user && username ? { id: user.id, username, isAdmin, avatarUrl } : null} />
         {children}
         <SiteFooter user={user && username ? { id: user.id, username, isAdmin } : null} />
       </body>
+      {gaId ? <GoogleAnalytics gaId={gaId} /> : null}
     </html>
   );
 }

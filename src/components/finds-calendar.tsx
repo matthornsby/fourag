@@ -6,6 +6,7 @@ import { markerRotation } from "@/lib/marker-rotation";
 import { computeLuck, luckAddedOnDay, luckToOpacity, luckAddedToCircleDiameterPct, luckAddedToMarkerSize } from "@/lib/luck";
 import { CloverMarker } from "@/components/clover-marker";
 import { FindCardDialog } from "@/components/find-card-dialog";
+import { loadPrefs, savePrefs } from "@/lib/prefs";
 import type { Find, Clover } from "@/types";
 
 // --- Meta helpers ---
@@ -150,6 +151,8 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
   const [photoSide, setPhotoSide] = useState<'left' | 'right'>('left');
   const [weekStart, setWeekStart] = useState<0 | 1>(weekStartsOn);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const skipOrientationFirst = useRef(true);
+  const skipThemeFirst = useRef(true);
   const [evenSentinels, setEvenSentinels] = useState(true);
   const [colCount, setColCount] = useState(7);
   const [selectedFind, setSelectedFind] = useState<(Find & { clovers: Clover[] }) | null>(null);
@@ -199,13 +202,27 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
     return () => ro.disconnect();
   }, []);
 
-useEffect(() => {
-    document.documentElement.dataset.orientation =
-      photoSide === 'left' ? 'right-handed' : 'left-handed';
+  // The server already applies saved theme/orientation to <html> before paint
+  // (from the prefs cookie). Load them into local state so the controls reflect
+  // reality and we don't clobber the server value on mount.
+  useEffect(() => {
+    const prefs = loadPrefs();
+    if (prefs.orientation === 'left-handed') setPhotoSide('right');
+    if (prefs.theme === 'light') setTheme('light');
+    if (prefs.weekStart !== undefined) setWeekStart(prefs.weekStart);
+  }, []);
+
+  useEffect(() => {
+    if (skipOrientationFirst.current) { skipOrientationFirst.current = false; return; }
+    const orientation = photoSide === 'left' ? 'right-handed' : 'left-handed';
+    document.documentElement.dataset.orientation = orientation;
+    savePrefs({ orientation });
   }, [photoSide]);
 
   useEffect(() => {
+    if (skipThemeFirst.current) { skipThemeFirst.current = false; return; }
     document.documentElement.dataset.theme = theme;
+    savePrefs({ theme });
   }, [theme]);
 
   const detectOrientation = useCallback((img: HTMLImageElement, findId: string) => {
@@ -593,18 +610,10 @@ useEffect(() => {
             >
               {/* Clover marker */}
               {leafCount !== null && added > 0 && (
-                <div
-                  className="pointer-events-none"
-                  style={{
-                    position: 'absolute',
-                    width: `${luckAddedToMarkerSize(added) * 100}%`,
-                    aspectRatio: '1',
-                    top: '50%',
-                    left: '50%',
-                    transform: 'translate(-50%, -50%)',
-                  }}
-                >
-                  <CloverMarker leafCount={leafCount} rotation={markerRotation(cellKey, 0)} filled />
+                <div className="cal-find-marker">
+                  <div style={{ width: `${luckAddedToMarkerSize(added) * 100}%` }}>
+                    <CloverMarker leafCount={leafCount} rotation={markerRotation(cellKey, 0)} filled />
+                  </div>
                 </div>
               )}
 
@@ -714,10 +723,10 @@ useEffect(() => {
                   <div className="cal-location-label absolute bottom-0 left-0 right-0 flex flex-col items-start justify-end-safe gap-2 px-2 py-2 aspect-video min-w-60 font-semibold text-xs"
                     style={{ background: 'linear-gradient(20deg, color-mix(in srgb, var(--color-background) 90%, rgba(0,0,0,.5)), transparent 50%, transparent)'}}>
                     <span className={[
-                        'truncate flex gap-1 transition-opacity duration-300',
+                        'truncate flex items-center gap-1 transition-opacity duration-300',
                         isTop && find.location_name ? 'opacity-100' : 'opacity-0',
                       ].join(' ')}>
-                      <MapPin size={12} strokeWidth={2} className="shrink-0" />{find.location_name}
+                      <MapPin size={12} strokeWidth={2} className="fill-current shrink-0" />{find.location_name}
                     </span>
                   </div>
                 </div>
@@ -755,12 +764,12 @@ useEffect(() => {
         Light
       </button>
       <div className="w-px h-4 mx-1" style={{ background: 'color-mix(in srgb, var(--color-text-primary) 15%, transparent)' }} />
-      <button onClick={() => setWeekStart(1)}
+      <button onClick={() => { setWeekStart(1); savePrefs({ weekStart: 1 }); }}
         className="px-3 py-1.5 rounded-xl transition-colors"
         style={{ background: weekStart === 1 ? 'color-mix(in srgb, var(--color-text-primary) 15%, transparent)' : 'transparent', color: 'var(--color-text-primary)' }}>
         Mon
       </button>
-      <button onClick={() => setWeekStart(0)}
+      <button onClick={() => { setWeekStart(0); savePrefs({ weekStart: 0 }); }}
         className="px-3 py-1.5 rounded-xl transition-colors"
         style={{ background: weekStart === 0 ? 'color-mix(in srgb, var(--color-text-primary) 15%, transparent)' : 'transparent', color: 'var(--color-text-primary)' }}>
         Sun

@@ -2,15 +2,9 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase-server'
 import { createAdminClient } from '@/lib/supabase-admin'
-import { AdminPanel } from './admin-panel'
-import type { Find, Clover } from '@/types'
+import { UsersPanel, type AdminUser } from './users-panel'
 
-export default async function AdminPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ q?: string }>
-}) {
-  const { q } = await searchParams
+export default async function AdminUsersPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -25,13 +19,12 @@ export default async function AdminPage({
   if (!profile?.is_admin) notFound()
 
   const admin = createAdminClient()
-  const { data: finds } = await admin
-    .from('finds')
-    .select('*, clovers(*), users(username)')
-    .order('created_at', { ascending: false })
+  const { data: users } = await admin
+    .from('users')
+    .select('id, username, is_admin, trusted, created_at')
+    .order('created_at', { ascending: true })
 
-  type AdminFind = Find & { clovers: Clover[]; users: { username: string } | null }
-  const typedFinds = (finds ?? []) as AdminFind[]
+  const typedUsers = (users ?? []) as AdminUser[]
 
   return (
     <main className="flex-1">
@@ -39,21 +32,21 @@ export default async function AdminPage({
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-xl font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-              Admin
+              Users
             </h1>
             <p className="text-sm mt-1" style={{ color: 'var(--color-text-secondary)' }}>
-              {typedFinds.length} total finds
+              {typedUsers.length} total users
             </p>
           </div>
           <Link
-            href="/admin/users"
+            href="/admin"
             className="text-sm font-medium hover:opacity-70 transition-opacity shrink-0 mt-1"
             style={{ color: 'var(--color-accent)' }}
           >
-            Manage users →
+            ← Finds
           </Link>
         </div>
-        <AdminPanel finds={typedFinds} adminUserId={user.id} initialSearch={q ?? ''} />
+        <UsersPanel users={typedUsers} currentUserId={user.id} />
       </div>
     </main>
   )

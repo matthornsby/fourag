@@ -12,6 +12,19 @@ interface Props {
   leafCount?: number
   findId?: string
   theme?: string
+  isApproximate?: boolean
+}
+
+/** GeoJSON polygon approximating a circle of radiusM metres centred on [lng, lat]. */
+function circlePolygon(lng: number, lat: number, radiusM: number, steps = 64) {
+  const R = 6371000
+  const dLat = (radiusM / R) * (180 / Math.PI)
+  const dLng = dLat / Math.cos(lat * Math.PI / 180)
+  const coords = Array.from({ length: steps + 1 }, (_, i) => {
+    const a = (i / steps) * 2 * Math.PI
+    return [lng + dLng * Math.cos(a), lat + dLat * Math.sin(a)]
+  })
+  return { type: 'Feature' as const, geometry: { type: 'Polygon' as const, coordinates: [coords] }, properties: {} }
 }
 
 const KEY = process.env.NEXT_PUBLIC_PROTOMAPS_KEY!
@@ -219,7 +232,7 @@ function createCloverMarkerEl(leafCount: number, findId: string, color: string):
   return el
 }
 
-export function FindMap({ lat, lng, leafCount, findId, theme }: Props) {
+export function FindMap({ lat, lng, leafCount, findId, theme, isApproximate }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef    = useRef<Map | null>(null)
   const markerRef = useRef<Marker | null>(null)
@@ -243,7 +256,7 @@ export function FindMap({ lat, lng, leafCount, findId, theme }: Props) {
         container:          containerRef.current,
         style:              buildStyle(isLight),   // reads CSS vars fresh each time
         center:             [lng, lat],
-        zoom:               16,
+        zoom:               isApproximate ? 11 : 16,
         attributionControl: false,
         scrollZoom:         false,
       })
@@ -262,6 +275,23 @@ export function FindMap({ lat, lng, leafCount, findId, theme }: Props) {
 
       map.on('load', () => {
         if (cancelled) return
+
+        if (isApproximate) {
+          map.addSource('approx-circle', { type: 'geojson', data: circlePolygon(lng, lat, 3000) })
+          map.addLayer({
+            id: 'approx-circle-fill',
+            type: 'fill',
+            source: 'approx-circle',
+            paint: { 'fill-color': accentColor, 'fill-opacity': 0.10 },
+          })
+          map.addLayer({
+            id: 'approx-circle-border',
+            type: 'line',
+            source: 'approx-circle',
+            paint: { 'line-color': accentColor, 'line-opacity': 0.5, 'line-width': 1.5 },
+          })
+        }
+
         const markerEl = leafCount && findId
           ? createCloverMarkerEl(leafCount, findId, accentColor)
           : undefined
@@ -278,7 +308,7 @@ export function FindMap({ lat, lng, leafCount, findId, theme }: Props) {
       mapRef.current = null
       markerRef.current = null
     }
-  }, [lat, lng, theme])
+  }, [lat, lng, theme, isApproximate])
 
   return <div ref={containerRef} className="w-full h-full" style={{ minHeight: '10rem' }} />
 }

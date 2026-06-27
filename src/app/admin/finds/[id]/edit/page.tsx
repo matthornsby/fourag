@@ -3,7 +3,6 @@ import { createClient } from '@/lib/supabase-server'
 import { createAdminClient } from '@/lib/supabase-admin'
 import { FindForm } from '@/components/find-form'
 import { adminUpdateFind } from '@/app/actions/admin'
-import { isAdminUsername } from '@/lib/constants'
 import type { Find, Clover } from '@/types'
 
 interface PageProps {
@@ -19,11 +18,11 @@ export default async function AdminEditFindPage({ params }: PageProps) {
 
   const { data: profile } = await supabase
     .from('users')
-    .select('username')
+    .select('is_admin')
     .eq('id', user.id)
     .single()
 
-  if (!isAdminUsername(profile?.username)) notFound()
+  if (!profile?.is_admin) notFound()
 
   const admin = createAdminClient()
   const { data: find } = await admin

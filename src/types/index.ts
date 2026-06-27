@@ -34,6 +34,7 @@ export interface UserProfile {
   avatar_url: string | null;
   bio: string | null;
   trusted: boolean;
+  is_admin: boolean;
   created_at: string;
   pronouns: PronounPreference;
 }

@@ -1,7 +1,7 @@
 'use client'
 
 import { useActionState, useRef, useState, useTransition } from 'react'
-import { updateProfile } from '@/app/actions/profile'
+import { updateProfile, deleteAccount } from '@/app/actions/profile'
 import type { UserProfile, PronounPreference } from '@/types'
 
 type ProfileState = { ok: true } | { ok: false; error: string } | null
@@ -16,6 +16,17 @@ export function ProfileForm({ profile }: ProfileFormProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [avatarPreview, setAvatarPreview] = useState<string | null>(profile.avatar_url)
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [isDeleting, startDelete] = useTransition()
+
+  function handleDelete() {
+    setDeleteError(null)
+    startDelete(async () => {
+      const res = await deleteAccount()
+      if (res && !res.ok) setDeleteError(res.error)
+    })
+  }
 
   const inputClass =
     'w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent'
@@ -64,6 +75,7 @@ export function ProfileForm({ profile }: ProfileFormProps) {
   }
 
   return (
+    <>
     <form onSubmit={handleSubmit} className="flex flex-col gap-6">
 
       {/* Avatar */}
@@ -164,5 +176,50 @@ export function ProfileForm({ profile }: ProfileFormProps) {
       </div>
 
     </form>
+
+    {/* Delete account */}
+    <div className="border-t border-border mt-10 pt-6">
+      <h2 className="text-sm font-medium text-text-primary mb-1">Delete account</h2>
+      <p className="text-sm text-text-secondary mb-3">
+        Permanently deletes your account, profile, and all of your finds. This can’t be undone.
+      </p>
+      {!confirmingDelete ? (
+        <button
+          type="button"
+          onClick={() => setConfirmingDelete(true)}
+          className="inline-flex items-center rounded-md border border-error text-error text-sm font-medium px-4 py-2 hover:opacity-80 transition-opacity duration-150"
+        >
+          Delete account
+        </button>
+      ) : (
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-text-primary">
+            Are you sure? This permanently removes your account and everything you’ve shared.
+          </p>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="inline-flex items-center rounded-md bg-error text-white text-sm font-medium px-4 py-2 hover:opacity-90 transition-opacity duration-150 disabled:opacity-50"
+            >
+              {isDeleting ? 'Deleting…' : 'Yes, delete my account'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmingDelete(false)}
+              disabled={isDeleting}
+              className="text-sm text-text-secondary hover:text-text-primary transition-colors duration-150 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      {deleteError && (
+        <p role="alert" className="text-sm text-error mt-2">{deleteError}</p>
+      )}
+    </div>
+    </>
   )
 }

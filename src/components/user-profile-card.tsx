@@ -7,6 +7,7 @@ import { UserAvatar } from '@/components/user-avatar'
 import { InterrobangIcon } from '@/components/icons/interrobang'
 import { markerRotation } from '@/lib/marker-rotation'
 import { luckSentence } from '@/lib/pronouns'
+import { prettify } from '@/lib/prettify'
 import type { Find, Clover, UserProfile } from '@/types'
 
 interface Props {
@@ -65,25 +66,29 @@ export function UserProfileCard({ profile, finds, luckEndDate, weekStart = 1, is
     : `${profile.username}’s`
 
   return (
+    <div className="relative mt-16 md:mt-24 flex flex-col">
+      {/* Avatar — floats above the card's top edge */}
+      <div className="absolute -top-16 left-1/2 -translate-x-1/2 z-10" style={{ filter: 'drop-shadow(0 8px 24px rgba(0,0,0,0.5))' }}>
+        <Link href={`/${profile.username.toLowerCase()}`}>
+          <UserAvatar username={profile.username} avatarUrl={profile.avatar_url} fallback={profile.username === 'anonymous' ? <InterrobangIcon /> : undefined} size="w-32 h-32" />
+        </Link>
+      </div>
+
     <div
-      className="rounded-2xl flex flex-col gap-4 p-5 overflow-hidden"
+      className="rounded-3xl flex flex-col gap-4 p-5 pt-20 overflow-hidden flex-1"
       style={{
         background: 'var(--color-surface)',
         border: '1px solid color-mix(in srgb, var(--color-text-primary) 10%, transparent)',
       }}
     >
       {/* Profile header */}
-      <div className="flex-1 flex flex-col items-center gap-2 text-center px-2">
-        <Link href={`/${profile.username.toLowerCase()}`}>
-          <UserAvatar username={profile.username} avatarUrl={profile.avatar_url} fallback={profile.username === 'anonymous' ? <InterrobangIcon /> : undefined} />
-        </Link>
-
+      <div className="md:flex-1 flex flex-col items-center gap-2 text-center px-2 relative z-10">
         <div className="flex flex-col gap-1 text-balance">
           <h2 className="text-2xl font-semibold text-text-primary capitalize text-serif">
             <Link href={`/${profile.username.toLowerCase()}`}>{profile.username}</Link>
           </h2>
           {profile.bio && (
-            <p className="text-base text-text-secondary">{profile.bio}</p>
+            <p className="text-base text-text-secondary">{prettify(profile.bio)}</p>
           )}
           {luckEndDate && (
             <p className="text-sm font-medium text-accent" style={{ color: 'var(--color-text-secondary)' }}>
@@ -98,14 +103,14 @@ export function UserProfileCard({ profile, finds, luckEndDate, weekStart = 1, is
       {/* CTA */}
       <Link
         href={`/${profile.username.toLowerCase()}`}
-        className="self-center button button-secondary"
+        className="self-center button button-secondary relative z-10"
       >
         {profile.username === 'anonymous' ? 'See Anonymous Finds' : isOwner ? 'See your find history' : `See ${possessive} find history`}
       </Link>
 
       {/* Mini 4-week calendar */}
       <div
-        className="grid"
+        className="grid profile-mini-cal"
         style={{
           gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
           '--cal-gap': 'clamp(2px, .5vw, 6px)',
@@ -201,6 +206,7 @@ export function UserProfileCard({ profile, finds, luckEndDate, weekStart = 1, is
           )
         })}
       </div>
+    </div>
     </div>
   )
 }

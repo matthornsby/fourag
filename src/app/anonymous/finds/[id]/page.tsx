@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase-server";
 import { FindsCalendar } from "@/components/finds-calendar";
 import type { Find, Clover } from "@/types";
+import { sanitizeFinds } from "@/lib/snap-coords";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -30,7 +31,7 @@ export default async function AnonymousFindPage({ params }: PageProps) {
 
   if (find.location_privacy === "private") redirect("/anonymous");
 
-  const typedFinds = (finds ?? []) as (Find & { clovers: Clover[] })[];
+  const typedFinds = sanitizeFinds((finds ?? []) as (Find & { clovers: Clover[] })[], null);
 
   return (
     <main className="flex-1" style={{ overflowY: "clip" }}>

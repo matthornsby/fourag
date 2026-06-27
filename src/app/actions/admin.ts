@@ -5,18 +5,18 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase-server'
 import { createAdminClient } from '@/lib/supabase-admin'
 import type { FindStatus } from '@/types'
-import { isAdminUsername } from '@/lib/constants'
 
-async function requireAdmin(): Promise<void> {
+async function requireAdmin(): Promise<string> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
   const { data: profile } = await supabase
     .from('users')
-    .select('username')
+    .select('is_admin')
     .eq('id', user.id)
     .single()
-  if (!isAdminUsername(profile?.username)) throw new Error('Not authorized')
+  if (!profile?.is_admin) throw new Error('Not authorized')
+  return user.id
 }
 
 export async function updateFindStatus(
@@ -168,4 +168,46 @@ export async function adminUpdateFind(
 
   revalidatePath('/admin')
   redirect('/admin')
+}
+
+export async function setUserAdmin(
+  userId: string,
+  isAdmin: boolean,
+): Promise<{ error: string } | { ok: true }> {
+  let adminId: string
+  try {
+    adminId = await requireAdmin()
+  } catch (e) {
+    return { error: (e as Error).message }
+  }
+
+  // Prevent locking yourself out of the admin panel.
+  if (userId === adminId && !isAdmin) {
+    return { error: 'You can’t remove your own admin access.' }
+  }
+
+  const admin = createAdminClient()
+  const { error } = await admin.from('users').update({ is_admin: isAdmin }).eq('id', userId)
+  if (error) return { error: error.message }
+
+  revalidatePath('/admin/users')
+  return { ok: true }
+}
+
+export async function setUserTrusted(
+  userId: string,
+  trusted: boolean,
+): Promise<{ error: string } | { ok: true }> {
+  try {
+    await requireAdmin()
+  } catch (e) {
+    return { error: (e as Error).message }
+  }
+
+  const admin = createAdminClient()
+  const { error } = await admin.from('users').update({ trusted }).eq('id', userId)
+  if (error) return { error: error.message }
+
+  revalidatePath('/admin/users')
+  return { ok: true }
 }

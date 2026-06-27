@@ -6,7 +6,7 @@ import { MapPin, Pencil } from "lucide-react";
 import { CloverMarker } from "@/components/clover-marker";
 import { FindMap } from "@/components/find-map";
 import { markerRotation } from "@/lib/marker-rotation";
-import { cloverPath } from "@/lib/clover-path";
+import { prettify } from "@/lib/prettify";
 import { luckValue, LUCK_DECAY_RATE } from "@/lib/luck";
 import type { Find, Clover } from "@/types";
 
@@ -126,7 +126,6 @@ export const FindCardContent = forwardRef<HTMLDivElement, Props>(function FindCa
     }
   }
 
-  const leafGroups = groupLeafCounts(find.clovers);
   const hasLocation = find.lat !== null && find.lng !== null && find.location_privacy !== 'private';
   // A map will be shown (mounts only when active) — reserve its height up front so the
   // card doesn't grow (and shift) when the map mounts on settle.
@@ -189,21 +188,6 @@ export const FindCardContent = forwardRef<HTMLDivElement, Props>(function FindCa
                   </div>
                 );
               })}
-
-              {leafGroups.length > 0 && (
-                <div className="find-card-leaf-label absolute bottom-0 left-0 px-3 py-3 font-semibold">
-                  <span className="flex gap-2">
-                    {leafGroups.map(({ count, num }, i) => (
-                      <span key={i} className="flex items-center gap-0.5">
-                        <svg width="1.1em" height="1.1em" viewBox="0 0 100 100" aria-hidden="true" className="fill-current">
-                          <path d={cloverPath(count)} />
-                        </svg>
-                        {num > 1 && <span>×{num}</span>}
-                      </span>
-                    ))}
-                  </span>
-                </div>
-              )}
             </div>
 
             {/* Text + map row */}
@@ -212,7 +196,7 @@ export const FindCardContent = forwardRef<HTMLDivElement, Props>(function FindCa
               <div className="flex flex-col gap-3 px-5 py-5">
                 {find.notes && (
                   <p className="text-base font-medium leading-snug" style={{ color: 'var(--color-text-primary)' }}>
-                    {find.notes}
+                    {prettify(find.notes)}
                   </p>
                 )}
                 {findNarrative && (
@@ -243,7 +227,7 @@ export const FindCardContent = forwardRef<HTMLDivElement, Props>(function FindCa
                 {hasLocation && find.lat !== null && find.lng !== null ? (
                   <>
                     {isActive && (
-                      <FindMap lat={find.lat} lng={find.lng} leafCount={find.clovers.reduce((m, c) => Math.max(m, c.leaf_count), 4)} findId={find.id} theme={theme} />
+                      <FindMap lat={find.lat} lng={find.lng} leafCount={find.clovers.reduce((m, c) => Math.max(m, c.leaf_count), 4)} findId={find.id} theme={theme} isApproximate={find.location_privacy === 'approximate'} />
                     )}
                     {find.location_name && (
                       <div className="find-card-location-pill absolute bottom-0 left-0 right-0 flex items-center gap-1.5 px-4 py-3 text-sm font-medium">
@@ -305,28 +289,13 @@ export const FindCardContent = forwardRef<HTMLDivElement, Props>(function FindCa
                   </div>
                 );
               })}
-
-              {leafGroups.length > 0 && (
-                <div className="find-card-leaf-label absolute bottom-0 left-0 px-3 py-3 font-semibold">
-                  <span className="flex gap-2">
-                    {leafGroups.map(({ count, num }, i) => (
-                      <span key={i} className="flex items-center gap-0.5">
-                        <svg width="1.1em" height="1.1em" viewBox="0 0 100 100" aria-hidden="true" className="fill-current">
-                          <path d={cloverPath(count)} />
-                        </svg>
-                        {num > 1 && <span>×{num}</span>}
-                      </span>
-                    ))}
-                  </span>
-                </div>
-              )}
             </div>
 
             {/* Notes / narrative column */}
             <div className="find-card-notes flex flex-col gap-3 px-5 py-5">
               {find.notes && (
                 <p className="text-base font-medium leading-snug" style={{ color: 'var(--color-text-primary)' }}>
-                  {find.notes}
+                  {prettify(find.notes)}
                 </p>
               )}
 
@@ -361,7 +330,7 @@ export const FindCardContent = forwardRef<HTMLDivElement, Props>(function FindCa
               {hasLocation && find.lat !== null && find.lng !== null ? (
                 <>
                   {isActive && (
-                    <FindMap lat={find.lat} lng={find.lng} leafCount={find.clovers.reduce((m, c) => Math.max(m, c.leaf_count), 4)} findId={find.id} theme={theme} />
+                    <FindMap lat={find.lat} lng={find.lng} leafCount={find.clovers.reduce((m, c) => Math.max(m, c.leaf_count), 4)} findId={find.id} theme={theme} isApproximate={find.location_privacy === 'approximate'} />
                   )}
                   {find.location_name && (
                     <div className="find-card-location-pill absolute bottom-0 left-0 right-0 flex items-center gap-1.5 px-4 py-3 text-sm font-medium">

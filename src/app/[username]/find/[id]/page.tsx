@@ -8,6 +8,8 @@ import { FINDS_TERM } from "@/lib/constants";
 import { computeLuckEndDate } from "@/lib/luck";
 import { luckSentence, cloverProfileSentence } from "@/lib/pronouns";
 import type { Find, Clover, UserProfile } from "@/types";
+import { sanitizeFinds } from "@/lib/snap-coords";
+import { prettify } from "@/lib/prettify";
 
 const LEAF_NAMES: Record<number, string> = {
   3: 'three-leaf', 4: 'four-leaf', 5: 'five-leaf', 6: 'six-leaf', 7: 'seven-leaf',
@@ -67,7 +69,6 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     openGraph: {
       title,
       description,
-      images: find.photo_url ? [{ url: find.photo_url }] : [],
     },
   };
 }
@@ -111,7 +112,7 @@ export default async function UserFindPage({ params }: PageProps) {
     .in("location_privacy", ["public", "approximate"])
     .order("found_at", { ascending: false });
 
-  const typedFinds = (finds ?? []) as (Find & { clovers: Clover[] })[];
+  const typedFinds = sanitizeFinds((finds ?? []) as (Find & { clovers: Clover[] })[], user?.id);
 
   const luckEndDate = computeLuckEndDate(typedFinds);
   const luckExpired = luckEndDate ? new Date(luckEndDate) < new Date() : false;
@@ -152,7 +153,7 @@ export default async function UserFindPage({ params }: PageProps) {
           {pageHeading(typedProfile.username, isOwner)}
         </h1>
         {typedProfile.bio && (
-          <p className="text-base text-text-secondary">{typedProfile.bio}</p>
+          <p className="text-base text-text-secondary">{prettify(typedProfile.bio)}</p>
         )}
         {totalClovers > 0 && sinceStr && bestCloverFind && bestCloverDateStr && (
           <p className="text-base text-text-secondary">

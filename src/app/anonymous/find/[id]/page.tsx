@@ -6,6 +6,7 @@ import { UserAvatar } from "@/components/user-avatar";
 import { InterrobangIcon } from "@/components/icons/interrobang";
 import { FINDS_TERM } from "@/lib/constants";
 import type { Find, Clover } from "@/types";
+import { sanitizeFinds } from "@/lib/snap-coords";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -65,7 +66,6 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     openGraph: {
       title,
       description,
-      images: find.photo_url ? [{ url: find.photo_url }] : [],
     },
   };
 }
@@ -90,7 +90,7 @@ export default async function AnonymousFindPage({ params }: PageProps) {
     .eq("status", "approved")
     .order("found_at", { ascending: false });
 
-  const typedFinds = (finds ?? []) as (Find & { clovers: Clover[] })[];
+  const typedFinds = sanitizeFinds((finds ?? []) as (Find & { clovers: Clover[] })[], null);
 
   const totalClovers = typedFinds.reduce((sum, f) => sum + (f.clovers ?? []).length, 0);
   const earliestFind = typedFinds.length > 0

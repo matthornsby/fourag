@@ -7,7 +7,7 @@
   --color-surface: rgba(0,0,0,.2);
   --color-border: rgba(0,0,0,.3);
   --color-text-primary: #ffffff;
-  --color-text-secondary: color-mix(in srgb, var(--color-text-primary) 50%, transparent);
+  --color-text-secondary: color-mix(in srgb, var(--color-text-primary) 66%, transparent);
   --color-accent: #BAFF46;
   --color-accent-light: rgba(0,0,0,.1);
   --color-error: rgb(255, 71, 105);
@@ -291,6 +291,18 @@ body {
   animation: cal-photo-to-center linear both;
   animation-timeline: scroll(root);
   animation-range: 0px 50vh;
+
+  & > div:last-child{
+    transition: .1s scale, .1s opacity !important;
+    &:hover{
+      opacity: 1 !important;
+      scale: 1.01;
+    }
+    &:active{
+      opacity: 1 !important;
+      scale: 1;
+    }
+  }
 }
 
 @keyframes cal-photo-to-center {
@@ -352,6 +364,7 @@ body {
   width: 55%;
   max-width:650px;
   flex-shrink: 0;
+  z-index: 20;
 }
 
 .cal-month-col {
@@ -380,6 +393,7 @@ body {
   90%   {--label-opacity: 1;  opacity: 1; transform: translateY(-5%) translateX(0); scale: 1 .9; rotate: 0deg; blur: 0}
   100% { transform: translateY(0) translateX(0); scale: 1 1; }
 }
+
 
 
 .day-cell {
@@ -463,10 +477,14 @@ body {
 
   &.has-find {
     cursor: pointer;
+    transition: .1s;
   }
 
   &.has-find:hover {
     filter: brightness(1.15);
+    scale: 1.05;
+    transform-origin: center;
+    @apply shadow-sm;
   }
 
   &.has-find:active {
@@ -494,6 +512,22 @@ body {
     margin-right: .3em;
   }
 
+}
+
+.cal-find-marker {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+
+  > div {
+    aspect-ratio: 1;
+    flex-shrink: 0;
+    cursor: pointer;
+  }
 }
 
 /* ─── Mobile calendar layout (< 768px) ───────────────────────────────────── */
@@ -561,7 +595,7 @@ body {
 
 
   /* Fixed height replaces aspect-square; overflow visible lets circles extend beyond column */
-  .day-cell {
+  [data-orientation] .day-cell {
     aspect-ratio: auto;
     height: 1.5rem;
     overflow: visible !important;
@@ -571,6 +605,20 @@ body {
       font-size: .75rem;
     }
   }
+
+  /* Profile card mini-cal: restore square cells, overriding the flat mobile layout */
+  .profile-mini-cal {
+    --chamfer: calc(var(--cal-gap) * 6.4) !important;
+
+   .day-cell {
+      height: unset;
+      aspect-ratio: 1;
+      overflow: hidden;
+      border-radius: calc(var(--cal-gap) * 3.4) !important;
+    }
+  }
+
+  
 
   /* Hide blank padding cells; month labels and find circles stay visible */
   .cal-grid > div:not(.day-cell):not(.cal-month-label):not(.cal-find-circle) {
@@ -591,6 +639,14 @@ body {
 @keyframes find-backdrop-in {
   from { opacity: 0; }
   to   { opacity: 1; }
+}
+
+/* Neighbouring (off-centre) cards lift slightly on hover to signal they're clickable.
+   The scale is applied to the inner .find-card (not the slide) so it grows about the
+   card's own centre — the slide's own transform has a translateX that would otherwise
+   make the scale shift the card sideways. */
+.find-carousel-slide.is-neighbour:hover .find-card {
+  scale: 1.01;
 }
 
 /* ─── Find carousel (in-dialog navigation) ──────────────────────────────────
@@ -645,6 +701,7 @@ body {
    (e.g. while its image loads), avoiding any open-time vertical shift. */
 .find-carousel-slide .find-card {
   transform: translateY(var(--vy, 0px));
+  transition: scale 0.15s ease;
 }
 
 /* Opaque scrim that dims neighbours from inside the card, so the card background
@@ -707,11 +764,6 @@ body {
     }
   }
 
-  .find-card-leaf-label {
-    background: linear-gradient(12.5deg, color-mix(in srgb, var(--color-background) 85%, rgba(0,0,0,0)), transparent 75%);
-    font-size: .875rem;
-  }
-
   .find-card-location-pill {
     background: linear-gradient(to top, color-mix(in srgb, var(--color-surface) 90%, transparent), transparent);
   }
@@ -722,8 +774,73 @@ body {
 .text-contrast{
  color: contrast-color(var(--color-background));
 
- &.bg-accent, 
+ &.bg-accent,
  &:is(.bg-accent *){
   color: contrast-color(var(--color-accent));
  }
+}
+
+/* ─── Long-form content pages (privacy, about) ───────────────────────────── */
+
+.page {
+  @apply mx-auto w-full max-w-4xl px-4 sm:px-6 lg:px-0 py-12 text-base sm:text-lg;
+
+  h1 {
+    font-family: var(--font-fraunces);
+    font-weight: 300;
+    font-variation-settings: "SOFT" 100, "opsz" 84;
+    font-size: var(--text-5xl);
+    line-height: var(--text-5xl--line-height);
+  }
+
+  h2 {
+    font-size: var(--text-xl);
+    font-weight: 600;
+    margin-bottom: 0;
+  }
+
+  p,
+  li {
+    @apply text-balance;
+    color: var(--color-text-secondary);
+
+    &:is(h1 + *), &:is(h2 + *){
+      margin-top: 0;
+    }
+  }
+
+  strong {
+    color: var(--color-text-primary);
+  }
+
+  a {
+    color: var(--color-accent);
+    text-decoration: underline;
+  }
+
+  ul {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--spacing) * 3);
+    padding-left: calc(var(--spacing) * 6);
+  }
+
+  /* Subtitle / lede directly under the page title */
+  .page-subtitle {
+    font-size: var(--text-sm);
+    margin-top: calc(var(--spacing) * 2);
+  }
+
+  /* Stack of content sections */
+  .page-sections {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--spacing) * 12);
+    margin-top: calc(var(--spacing) * 12);
+  }
+
+  /* Vertical rhythm between flow elements within a section */
+  section > * + * {
+    margin-top: calc(var(--spacing) * 4);
+  }
 }

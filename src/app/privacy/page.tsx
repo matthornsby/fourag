@@ -1,14 +1,25 @@
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Privacy Policy ✤ Fourag",
+  description: "How Fourag handles your data, photos, and location — and the privacy choices you control over each find.",
+  openGraph: {
+    title: "Privacy Policy ✤ Fourag",
+    description: "How Fourag handles your data, photos, and location — and the privacy choices you control over each find.",
+  },
+};
+
 export default function PrivacyPage() {
   return (
-    <main id="privacy-page" className="mx-auto w-full max-w-6xl px-4 sm:px-6 py-12">
-      <h1 className="text-serif" style={{ fontSize: "var(--text-5xl)", lineHeight: "var(--text-5xl--line-height)", marginBottom: "calc(var(--spacing) * 2)" }}>Privacy Policy</h1>
-      <p style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)", marginBottom: "calc(var(--spacing) * 12)" }}>Last updated: June 2026</p>
+    <main id="privacy-page" className="page">
+      <h1>Privacy Policy</h1>
+      <p className="page-subtitle">Last updated: June 2026</p>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "calc(var(--spacing) * 12)" }}>
+      <div className="page-sections">
 
         <section>
-          <h2 style={{ fontSize: "var(--text-xl)", fontWeight: 600, marginBottom: "calc(var(--spacing) * 4)" }}>Overview</h2>
-          <p style={{ color: "var(--color-text-secondary)", lineHeight: 1.7 }}>
+          <h2>Overview</h2>
+          <p>
             Fourag is a community for sharing treasure finds. This policy explains
             what data we collect, how we handle it, and the choices you have over
             what others can see.
@@ -16,38 +27,38 @@ export default function PrivacyPage() {
         </section>
 
         <section>
-          <h2 style={{ fontSize: "var(--text-xl)", fontWeight: 600, marginBottom: "calc(var(--spacing) * 4)" }}>Location Data</h2>
-          <p style={{ color: "var(--color-text-secondary)", lineHeight: 1.7, marginBottom: "calc(var(--spacing) * 4)" }}>
+          <h2>Location Data</h2>
+          <p>
             When you add a find, Fourag reads GPS coordinates embedded in the
             photo&rsquo;s EXIF metadata and stores the precise latitude and
             longitude on our servers. What gets shared publicly depends entirely
-            on the <strong style={{ color: "var(--color-text-primary)" }}>location setting</strong> you choose for that find:
+            on the <strong>location setting</strong> you choose for that find:
           </p>
-          <ul style={{ display: "flex", flexDirection: "column", gap: "calc(var(--spacing) * 3)", paddingLeft: "calc(var(--spacing) * 6)" }}>
-            <li style={{ color: "var(--color-text-secondary)", lineHeight: 1.7 }}>
-              <strong style={{ color: "var(--color-text-primary)" }}>Public</strong> &mdash; the exact coordinates are visible to
+          <ul>
+            <li>
+              <strong>Public</strong> &mdash; the exact coordinates are visible to
               anyone viewing the find.
             </li>
-            <li style={{ color: "var(--color-text-secondary)", lineHeight: 1.7 }}>
-              <strong style={{ color: "var(--color-text-primary)" }}>Approximate</strong> &mdash; only a rough area (a few
+            <li>
+              <strong>Approximate</strong> &mdash; only a rough area (a few
               kilometres) is shown publicly. The precise location is stored but
               never exposed.
             </li>
-            <li style={{ color: "var(--color-text-secondary)", lineHeight: 1.7 }}>
-              <strong style={{ color: "var(--color-text-primary)" }}>Private</strong> &mdash; no location information is shown to
+            <li>
+              <strong>Private</strong> &mdash; no location information is shown to
               other users. The stored coordinates are used only to power features
               like your personal finds map.
             </li>
           </ul>
-          <p style={{ color: "var(--color-text-secondary)", lineHeight: 1.7, marginTop: "calc(var(--spacing) * 4)" }}>
+          <p>
             If your photo has no GPS metadata, no location is recorded and the
             find defaults to private.
           </p>
         </section>
 
         <section>
-          <h2 style={{ fontSize: "var(--text-xl)", fontWeight: 600, marginBottom: "calc(var(--spacing) * 4)" }}>Image Metadata</h2>
-          <p style={{ color: "var(--color-text-secondary)", lineHeight: 1.7 }}>
+          <h2>Image Metadata</h2>
+          <p>
             Before your photo is uploaded to our servers, Fourag strips all EXIF
             and other embedded metadata from the image file. This means the copy
             of your photo we store &mdash; and the copy other users see &mdash;
@@ -59,8 +70,8 @@ export default function PrivacyPage() {
         </section>
 
         <section>
-          <h2 style={{ fontSize: "var(--text-xl)", fontWeight: 600, marginBottom: "calc(var(--spacing) * 4)" }}>Analytics</h2>
-          <p style={{ color: "var(--color-text-secondary)", lineHeight: 1.7 }}>
+          <h2>Analytics</h2>
+          <p>
             Fourag uses Google Analytics to understand how the site is used in
             aggregate. When analytics is active, Google collects standard usage
             data including pages visited, time spent, general geographic region
@@ -74,7 +85,6 @@ export default function PrivacyPage() {
               href="https://tools.google.com/dlpage/gaoptout"
               target="_blank"
               rel="noopener noreferrer"
-              style={{ color: "var(--color-accent)", textDecoration: "underline" }}
             >
               Google Analytics Opt-out Browser Add-on
             </a>
@@ -83,8 +93,8 @@ export default function PrivacyPage() {
         </section>
 
         <section>
-          <h2 style={{ fontSize: "var(--text-xl)", fontWeight: 600, marginBottom: "calc(var(--spacing) * 4)" }}>Account Data</h2>
-          <p style={{ color: "var(--color-text-secondary)", lineHeight: 1.7 }}>
+          <h2>Account Data</h2>
+          <p>
             We store the information you provide when creating an account: your
             username, display name, bio, and avatar. Your email address is used
             only for authentication and is never shown to other users.
@@ -92,24 +102,17 @@ export default function PrivacyPage() {
         </section>
 
         <section>
-          <h2 style={{ fontSize: "var(--text-xl)", fontWeight: 600, marginBottom: "calc(var(--spacing) * 4)" }}>Data Deletion</h2>
-          <p style={{ color: "var(--color-text-secondary)", lineHeight: 1.7 }}>
-            You can delete individual finds at any time from your account. To
-            request deletion of your entire account and all associated data,
-            contact us at the address below.
+          <h2>Data Deletion</h2>
+          <p>
+            You can delete individual finds at any time from your account. You can delete your account at any time from the profile edit screen. To request the deletion of a you account if you cannot log in or to request the removal of an anonymous find, please contact us at <a href="mailto:hi@fourag.ing">hi@fourag.ing</a>.
           </p>
         </section>
 
         <section>
-          <h2 style={{ fontSize: "var(--text-xl)", fontWeight: 600, marginBottom: "calc(var(--spacing) * 4)" }}>Contact</h2>
-          <p style={{ color: "var(--color-text-secondary)", lineHeight: 1.7 }}>
+          <h2>Contact</h2>
+          <p>
             Questions about this policy or your data? Reach us at{" "}
-            <a
-              href="mailto:hello@fourag.com"
-              style={{ color: "var(--color-accent)", textDecoration: "underline" }}
-            >
-              hello@fourag.com
-            </a>
+            <a href="mailto:hi@fourag.ing">hi@fourag.ing</a>
             .
           </p>
         </section>

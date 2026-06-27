@@ -7,6 +7,7 @@ import { UserProfileCard } from '@/components/user-profile-card'
 import { HomepageMap } from '@/components/homepage-map'
 import type { Find, Clover, UserProfile } from '@/types'
 import { SHARE_A_FIND } from '@/lib/constants'
+import { loadPrefs, savePrefs } from '@/lib/prefs'
 
 interface Props {
   userId: string | null
@@ -15,18 +16,6 @@ interface Props {
   findsByUser: Record<string, (Find & { clovers: Clover[] })[]>
   luckEndDates: Record<string, string | null>
   mappableFinds: Find[]
-}
-
-function loadPrefs() {
-  try {
-    return JSON.parse(localStorage.getItem('fourag-prefs') || '{}')
-  } catch { return {} }
-}
-
-function savePrefs(update: Record<string, unknown>) {
-  try {
-    localStorage.setItem('fourag-prefs', JSON.stringify({ ...loadPrefs(), ...update }))
-  } catch { /* ignore */ }
 }
 
 export function HomepageContent({ userId, heroFinds, profiles, findsByUser, luckEndDates, mappableFinds }: Props) {
@@ -41,6 +30,12 @@ export function HomepageContent({ userId, heroFinds, profiles, findsByUser, luck
     if (prefs.orientation === 'left-handed') setPhotoSide('right')
     if (prefs.theme === 'light') setTheme('light')
     if (prefs.weekStart === 0) setWeekStart(0)
+    // Migrate legacy localStorage-only prefs into the cookie (so the server can
+    // apply them before paint on future loads) and reflect them on this load.
+    document.documentElement.dataset.orientation =
+      prefs.orientation === 'left-handed' ? 'left-handed' : 'right-handed'
+    if (prefs.theme === 'light') document.documentElement.dataset.theme = 'light'
+    savePrefs(prefs)
   }, [])
 
   useEffect(() => {
@@ -91,7 +86,7 @@ export function HomepageContent({ userId, heroFinds, profiles, findsByUser, luck
 
       {/* User profile cards */}
       {profiles.length > 0 && (
-        <section className="mx-auto max-w-(--width-main-max) px-4 sm:px-6 py-12 grid grid-cols-1 md:grid-cols-2 gap-12">
+        <section className="mx-auto max-w-(--width-main-max) px-4 sm:px-6 pt-4 pb-12 md:pb-24 grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6 md:gap-12">
           {profiles.map(profile => (
             <UserProfileCard
               key={profile.id}

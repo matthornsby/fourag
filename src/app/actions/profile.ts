@@ -1,6 +1,8 @@
 'use server'
 
+import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase-server'
+import { createAdminClient } from '@/lib/supabase-admin'
 
 type ProfileState = { ok: true } | { ok: false; error: string } | null
 
@@ -70,4 +72,38 @@ export async function updateProfile(
   }
 
   return { ok: true }
+}
+
+export async function deleteAccount(): Promise<{ ok: false; error: string } | void> {
+  const supabase = await createClient()
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) {
+    return { ok: false, error: 'You must be signed in.' }
+  }
+
+  const admin = createAdminClient()
+
+  // Best-effort storage cleanup — objects in these buckets live under a {userId}/ prefix
+  // and aren't removed by the database cascade.
+  for (const bucket of ['avatars', 'finds'] as const) {
+    try {
+      const { data: files } = await admin.storage.from(bucket).list(user.id)
+      if (files && files.length > 0) {
+        await admin.storage.from(bucket).remove(files.map((f) => `${user.id}/${f.name}`))
+      }
+    } catch {
+      // Non-fatal — proceed with account deletion regardless.
+    }
+  }
+
+  // Delete the auth user. The FK cascade removes public.users → finds → clovers.
+  const { error } = await admin.auth.admin.deleteUser(user.id)
+  if (error) {
+    return { ok: false, error: `Couldn't delete account — ${error.message}` }
+  }
+
+  // Clear the now-orphaned session cookie, then send them home.
+  await supabase.auth.signOut()
+  redirect('/')
 }

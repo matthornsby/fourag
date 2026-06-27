@@ -8,6 +8,8 @@ import { UserAvatar } from "@/components/user-avatar";
 import { computeLuckEndDate } from "@/lib/luck";
 import { luckSentence, cloverProfileSentence } from "@/lib/pronouns";
 import type { Find, Clover, UserProfile } from "@/types";
+import { sanitizeFinds } from "@/lib/snap-coords";
+import { prettify } from "@/lib/prettify";
 
 interface PageProps {
   params: Promise<{ username: string }>;
@@ -76,7 +78,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     .in("location_privacy", privacyFilter)
     .order("found_at", { ascending: false });
 
-  const typedFinds = (finds ?? []) as (Find & { clovers: Clover[] })[];
+  const typedFinds = sanitizeFinds((finds ?? []) as (Find & { clovers: Clover[] })[], user?.id);
 
   const luckEndDate = computeLuckEndDate(typedFinds);
   const luckExpired = luckEndDate ? new Date(luckEndDate) < new Date() : false;
@@ -125,7 +127,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
           {pageHeading(typedProfile.username, isOwner)}
         </h1>
         {typedProfile.bio && (
-          <p className="text-base sm:text-lg text-text-secondary">{typedProfile.bio}</p>
+          <p className="text-base sm:text-lg text-text-secondary">{prettify(typedProfile.bio)}</p>
         )}
         {totalClovers > 0 && sinceStr && bestCloverFind && bestCloverDateStr && (
           <p className="text-base text-text-secondary">

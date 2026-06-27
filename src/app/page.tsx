@@ -4,6 +4,7 @@ import { HomepageContent } from "@/components/homepage-content";
 import { computeLuckEndDate } from "@/lib/luck";
 import type { Find, Clover, UserProfile } from "@/types";
 import { SITE_TAGLINE } from "@/lib/constants";
+import { sanitizeFinds } from "@/lib/snap-coords";
 
 export const metadata: Metadata = {
   title: `✤ Fourag: ${SITE_TAGLINE}`,
@@ -26,7 +27,7 @@ export default async function Home() {
       .order("found_at", { ascending: false }),
   ]);
 
-  const typedFinds = (finds ?? []) as (Find & { clovers: Clover[] })[];
+  const typedFinds = sanitizeFinds((finds ?? []) as (Find & { clovers: Clover[] })[], user?.id);
 
   // 2 most recent unique users
   const seenUserIds = new Set<string>();
@@ -65,7 +66,9 @@ export default async function Home() {
       avatar_url: null,
       bio: 'Finds shared without an account.',
       trusted: false,
+      is_admin: false,
       created_at: '',
+      pronouns: 'none',
     };
     sortedProfiles.push(anonymousProfile);
     findsByUser['anonymous'] = anonymousFinds;

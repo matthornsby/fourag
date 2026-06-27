@@ -1,16 +1,20 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useEffect, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { FindCardDialog } from '@/components/find-card-dialog'
+import { Pagination } from '@/components/pagination'
 import { updateFindStatus } from '@/app/actions/admin'
 import type { Find, Clover, FindStatus } from '@/types'
+
+const PAGE_SIZE = 20
 
 type AdminFind = Find & { clovers: Clover[]; users: { username: string } | null }
 
 interface Props {
   finds: AdminFind[]
   adminUserId: string
+  initialSearch?: string
 }
 
 const STATUS_FILTERS = [
@@ -62,15 +66,23 @@ function StatusBadge({ status }: { status: FindStatus }) {
 type SortField = 'found_at' | 'created_at'
 type SortDir = 'desc' | 'asc'
 
-export function AdminPanel({ finds: initialFinds, adminUserId }: Props) {
+export function AdminPanel({ finds: initialFinds, adminUserId, initialSearch = '' }: Props) {
   const [finds, setFinds] = useState<AdminFind[]>(initialFinds)
-  const [filter, setFilter] = useState<FilterValue>('pending')
-  const [search, setSearch] = useState('')
+  // When arriving with a username search (e.g. from the users view), show all
+  // statuses so approved finds aren't hidden by the default "pending" filter.
+  const [filter, setFilter] = useState<FilterValue>(initialSearch ? 'all' : 'pending')
+  const [search, setSearch] = useState(initialSearch)
   const [sortField, setSortField] = useState<SortField>('created_at')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [selectedFind, setSelectedFind] = useState<AdminFind | null>(null)
   const [isPending, startTransition] = useTransition()
   const [actionError, setActionError] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+
+  // Reset to the first page whenever the visible set changes.
+  useEffect(() => {
+    setPage(1)
+  }, [filter, search, sortField, sortDir])
 
   const filtered = (filter === 'all' ? finds : finds.filter((f) => f.status === filter))
     .filter((f) => {
@@ -85,6 +97,10 @@ export function AdminPanel({ finds: initialFinds, adminUserId }: Props) {
       const bv = new Date(b[sortField]).getTime()
       return sortDir === 'desc' ? bv - av : av - bv
     })
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages)
+  const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
 
   function toggleSort(field: SortField) {
     if (sortField === field) {
@@ -234,7 +250,7 @@ export function AdminPanel({ finds: initialFinds, adminUserId }: Props) {
           className="rounded-xl overflow-hidden"
           style={{ border: '1px solid color-mix(in srgb, var(--color-text-primary) 10%, transparent)' }}
         >
-          {filtered.map((find, i) => {
+          {paged.map((find, i) => {
             const creator = find.user_id ? (find.users?.username ?? 'unknown') : 'anonymous'
             const fmt = (d: string) => new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(d))
             return (
@@ -278,11 +294,15 @@ export function AdminPanel({ finds: initialFinds, adminUserId }: Props) {
         </div>
       )}
 
+      <Pagination page={safePage} totalPages={totalPages} onPageChange={setPage} />
+
       {/* Dialog */}
       <FindCardDialog
-        find={selectedFind}
+        finds={paged}
+        activeId={selectedFind?.id ?? null}
         userId={adminUserId}
         onClose={() => setSelectedFind(null)}
+        onNavigate={(find) => setSelectedFind(find as AdminFind)}
         adminControls={adminControls}
       />
     </>

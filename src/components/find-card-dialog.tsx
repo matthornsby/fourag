@@ -110,7 +110,17 @@ export function FindCardDialog({
     const frac = el.dataset.findId === currentId ? vfracRef.current : 0;
     el.style.setProperty('--vy', `${vyFor(cardEl(el), frac)}px`);
     el.style.zIndex = String(100 - Math.round(Math.abs(rel) * 10));
-    el.style.pointerEvents = Math.abs(rel) < 0.5 ? 'auto' : 'none';
+    // The centred card handles input on its own content (links, map, edit button).
+    // Neighbours stay clickable too, but as a single target: a click anywhere on one
+    // navigates to it, so its inner content is made transparent to pointer events and
+    // the slide wrapper captures the click (see onSlideClick). Far-off slides (|rel| ≥
+    // 1.5) ignore input so the backdrop behind them still closes the dialog.
+    const isCentre = Math.abs(rel) < 0.5;
+    el.style.pointerEvents = Math.abs(rel) < 1.5 ? 'auto' : 'none';
+    el.style.cursor = isCentre ? '' : 'pointer';
+    el.classList.toggle('is-neighbour', !isCentre);
+    const card = cardEl(el);
+    if (card) card.style.pointerEvents = isCentre ? 'auto' : 'none';
   };
 
   const layoutAll = () => {
@@ -281,6 +291,16 @@ export function FindCardDialog({
     onNavigate?.(f);
   };
 
+  // Click a neighbouring (off-centre) card to bring it to the centre, instead of the
+  // click falling through to the backdrop and closing the dialog.
+  const onSlideClick = (e: React.MouseEvent, id: string) => {
+    if (id === currentId || animatingCloseRef.current) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const idx = indexById.get(id);
+    if (idx != null) navigate(idx);
+  };
+
   // ── Keyboard ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!currentId) return;
@@ -438,6 +458,7 @@ export function FindCardDialog({
             key={f.id}
             ref={(el) => registerSlide(el, f.id)}
             className="find-carousel-slide"
+            onClick={(e) => onSlideClick(e, f.id)}
           >
             <FindCardContent
               find={f}

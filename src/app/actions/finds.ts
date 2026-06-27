@@ -256,7 +256,7 @@ export async function updateFind(findId: string, formData: FormData): Promise<{ 
 
   const usersData = existingFind.users as unknown as { username: string } | { username: string }[] | null
   const username = Array.isArray(usersData) ? usersData[0]?.username : usersData?.username
-  redirect(username ? `/${username}/finds/${findId}` : `/find/${findId}`)
+  redirect(username ? `/${username}/find/${findId}` : `/find/${findId}`)
 }
 
 export async function deleteFind(findId: string): Promise<{ error: string } | never> {

@@ -5,6 +5,7 @@ import { FindsCalendar } from "@/components/finds-calendar";
 import { LuckIndicator } from "@/components/luck-indicator";
 import { FINDS_TERM, SHARE_A_FIND } from "@/lib/constants";
 import type { Find, Clover } from "@/types";
+import { sanitizeFinds } from "@/lib/snap-coords";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -43,7 +44,7 @@ export default async function FindPage({ params }: PageProps) {
     redirect("/");
   }
 
-  const typedFinds = (finds ?? []) as (Find & { clovers: Clover[] })[];
+  const typedFinds = sanitizeFinds((finds ?? []) as (Find & { clovers: Clover[] })[], user?.id);
   const userFinds = user ? typedFinds.filter((f) => f.user_id === user.id) : [];
 
   return (
