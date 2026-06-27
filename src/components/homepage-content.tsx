@@ -64,7 +64,7 @@ export function HomepageContent({ userId, heroFinds, profiles, findsByUser, luck
             </h1>
             <div className="flex flex-col gap-2">
               <p className="text-base  text-text-secondary ">
-              You’re encouraged share pictures of these pint-sized polyphyllous plants, but not to pick them. Leave the leaves to continue growing so their luck and diversity can spread for everyone to discover and enjoy!
+              You’re encouraged to share pictures of these pint-sized polyphyllous plants, but not to pick them. Leave the leaves to continue growing so their luck and diversity can spread for everyone to discover and enjoy!
               </p>
             </div>
           </div>

@@ -28,7 +28,7 @@ export default function AboutPage() {
   <section>
     <h2>Why</h2>
     <p>
-    I built Fourag as an excute to learn a little about React, Tailwind, and Claude Code between jobs. 
+    I built Fourag as an excuse to learn a little about React, Tailwind, and Claude Code between jobs. 
     </p>
   </section>
 
@@ -39,7 +39,7 @@ export default function AboutPage() {
       Check the <a href="https://github.com/matthornsby/fourag/blob/main/README.md" target="_blank">README</a> on <a href="https://github.com/matthornsby/fourag"  target="_blank">Github</a> to see what's what, I'll do my best to keep it accurate and up to date.
     </p>
     <p>
-      There are definitely still things on my list, like completing a UI for display settings, manual location controls, and cleaning up some a lot of the Tailwind utility classes, which are, if I'm being honest, kind of gross.
+      There are definitely still things on my list, like completing a UI for display settings, manual location controls, and cleaning up a lot of the Tailwind utility classes, which are, if I'm being honest, kind of gross.
     </p>
   </section>
 
