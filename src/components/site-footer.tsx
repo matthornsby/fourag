@@ -14,7 +14,7 @@ export function SiteFooter({ user }: SiteFooterProps) {
         <ul className="flex gap-8 text-xs">
           <li>
           User Links
-          <ul>
+          <ul className="mt-1">
           <li><Link href="/account/finds/new" className="nav-link">{SHARE_A_FIND}</Link></li>
           {user ? (
             <>
@@ -29,7 +29,7 @@ export function SiteFooter({ user }: SiteFooterProps) {
           </ul>
           </li>
           <li>Site Links
-          <ul>
+          <ul className="mt-1">
             <li><Link href="/about" className="nav-link">About</Link></li>
             <li><Link href="/privacy" className="nav-link">Privacy</Link></li>
             {user && user.isAdmin &&(

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { cookies } from "next/headers";
 import { Geist, Geist_Mono, Fraunces } from "next/font/google";
 import { GoogleAnalytics } from "@next/third-parties/google";
@@ -28,6 +28,13 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Fourag",
   description: "Fourag is a public patch for spreading the serendipity of four-leaf (or even more-leaf) clovers.",
+};
+
+// viewport-fit=cover lets full-bleed surfaces (wallpaper, header/footer, maps) reach
+// the physical screen edge and exposes env(safe-area-inset-*) so content can inset
+// past the notch / rounded corners in landscape. See safe-area rules in globals.css.
+export const viewport: Viewport = {
+  viewportFit: "cover",
 };
 
 export default async function RootLayout({
