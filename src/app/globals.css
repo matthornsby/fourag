@@ -444,6 +444,100 @@ body {
   padding-top: calc(var(--cal-gap, 4px) / 2);
 }
 
+/* "Show unlucky patches" button: an accent-coloured affordance sitting where the
+   most recent hidden month would be. Sine waves above and below the label flow
+   when hovered. The row spans --button-rows grid rows (matched by the month-label
+   column's spacer, so the two stay aligned) and the button centres within it, so
+   the extra height becomes breathing room rather than overlapping day cells. */
+.cal-reveal-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+  pointer-events: none;
+  height: calc(var(--cell-h, 1.5rem) * var(--button-rows, 2));
+}
+
+.cal-reveal-button {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--cell-h, 1.5rem) * 0.15);
+  
+  width: max-content;
+  overflow: visible;
+  text-align: center;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  line-height: 2;
+  color: var(--color-accent);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  .cal-reveal-label {
+    line-height: .5;
+  }
+}
+
+.cal-wave {
+  display: block;
+  width: 0.8rem;
+  /* Scale with the row's height (--button-rows cells) so the waves fill the row
+     instead of looking squished — taller on mobile, where the row is 5 cells. */
+  height: calc(var(--cell-h, 1.5rem) * var(--button-rows, 2) * 0.35);
+  flex-shrink: 0;
+  /* Clip to the viewBox so only the seamless one-wavelength window shows; the path
+     is drawn a wavelength past each end, so the looped translate reads as a single
+     continuously flowing line rather than one that jumps on each reset. */
+  overflow: hidden;
+}
+
+/* Translate resolves in viewBox units, so 24 == one wavelength: the wave flows
+   along the line in place without shifting the line's position. */
+.cal-wave path {
+  transform-box: view-box;
+}
+
+/* The flow animation is always assigned but paused, so on un-hover the wave
+   freezes at its current frame instead of snapping back to the start. */
+.cal-wave-top path {
+  animation: cal-wave-flow 1.4s linear infinite paused;
+}
+.cal-wave-bottom path {
+  animation: cal-wave-flow-rev 1.4s linear infinite paused;
+}
+.cal-reveal-button:hover .cal-wave path {
+  animation-play-state: running;
+}
+
+@keyframes cal-wave-flow {
+  from { transform: translateY(0); }
+  to { transform: translateY(-24px); }
+}
+@keyframes cal-wave-flow-rev {
+  from { transform: translateY(0); }
+  to { transform: translateY(24px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cal-wave path { animation: none; }
+}
+
+/* Mobile: the grid column is a narrow date strip pinned to one screen edge, so
+   let the label wrap and anchor the affordance toward the centre, not off-edge. */
+@media (width < theme(--breakpoint-md)) {
+  .cal-reveal-button {
+     max-width: 11rem; font-size: 0.7rem; 
+     .cal-reveal-label { white-space: normal; line-height: 1.4; }
+    }
+  
+  [data-orientation="right-handed"] .cal-reveal-row { justify-content: flex-end; }
+  [data-orientation="left-handed"] .cal-reveal-row { justify-content: flex-start; }
+}
+
 /* The luck disc that sits behind a day cell. The wrapper (.cal-find-circle in the
    calendar, or the profile mini-cal equivalent) positions it on the grid; the disc
    itself is centred on the cell. Only its width is set inline (scales with luck). */
@@ -455,7 +549,8 @@ body {
   left: 50%;
   top: 0;
   transform: translate(-50%, -50%);
-  scale: .85;
+  scale: .78;
+  box-shadow: 0 0 var(--text-sm) color-mix(in srgb, var(--color-background) 30%, transparent);
 }
 
 
@@ -478,6 +573,8 @@ body {
   grid-row-end: auto;
   grid-column-end: auto;
   border-radius: var(--cell-border-radius);
+  /* --luck is the day's luck fraction (0–1); tint scales it up to 75% accent. */
+  --day-bg: color-mix(in srgb, var(--color-accent) calc(var(--luck, 0) * 75%), var(--color-surface));
   background-image: linear-gradient(to bottom, var(--day-bg), color-mix(in srgb, var(--day-bg) 60%, transparent));
   /* border: solid 1px color-mix(in srgb, var(--color-background) 20%, transparent); */
   border-top: solid 1px color-mix(in srgb, contrast-color(var(--color-background)) 10%, transparent); 
@@ -697,8 +794,8 @@ body {
 
   
 
-  /* Hide blank padding cells; month labels and find circles stay visible */
-  .cal-grid > div:not(.day-cell):not(.cal-month-label):not(.cal-find-circle) {
+  /* Hide blank padding cells; month labels, find circles, and the reveal row stay visible */
+  .cal-grid > div:not(.day-cell):not(.cal-month-label):not(.cal-find-circle):not(.cal-reveal-row) {
     display: none;
   }
 

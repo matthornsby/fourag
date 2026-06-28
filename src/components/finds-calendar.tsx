@@ -7,6 +7,7 @@ import { computeLuck, luckAddedOnDay, luckToOpacity, luckAddedToCircleDiameterPc
 import { CloverMarker } from "@/components/clover-marker";
 import { FindCardDialog } from "@/components/find-card-dialog";
 import { loadPrefs, savePrefs } from "@/lib/prefs";
+import { SHOW_EMPTY_MONTHS } from "@/lib/constants";
 import type { Find, Clover } from "@/types";
 
 // --- Meta helpers ---
@@ -37,6 +38,23 @@ function findTimeOfDay(dateStr: string) {
 function findFormatDate(dateStr: string) {
   return new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' }).format(new Date(dateStr));
 }
+
+// A vertical sine wave as a quadratic-bezier path — oscillates in x as it runs
+// down y. Drawn one wavelength past each end so it can translate by ±one
+// wavelength and still fill seamlessly: the wave flows along the line in place,
+// without shifting the line's position.
+function sineWavePath(yStart: number, yEnd: number, wavelength: number, amp: number, mid: number): string {
+  const half = wavelength / 2;
+  let d = `M ${mid} ${yStart}`;
+  let dir = -1;
+  for (let y = yStart; y < yEnd; y += half) {
+    d += ` Q ${mid + dir * amp * 2} ${y + half / 2} ${mid} ${y + half}`;
+    dir *= -1;
+  }
+  return d;
+}
+// viewBox 0 0 12 48 → 2 wavelengths visible; drawn from -24 to 72 for the scroll loop.
+const REVEAL_WAVE_PATH = sineWavePath(-24, 72, 24, 2.5, 6);
 
 function getMeta(attr: string, value: string): string {
   return (document.querySelector(`meta[${attr}="${value}"]`) as HTMLMetaElement | null)?.content ?? '';
@@ -155,6 +173,8 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
   const skipThemeFirst = useRef(true);
   const [evenSentinels, setEvenSentinels] = useState(true);
   const [colCount, setColCount] = useState(7);
+  // When false (default), months with no finds are collapsed behind a reveal button.
+  const [revealed, setRevealed] = useState(false);
   const [selectedFind, setSelectedFind] = useState<(Find & { clovers: Clover[] }) | null>(null);
   const [sourceRect, setSourceRect] = useState<DOMRect | null>(null);
   const activeCardRef = useRef<HTMLElement | null>(null);
@@ -428,10 +448,84 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
     rowGroups.get(row)!.push(idx);
   });
 
+  // --- Empty-month collapsing ----------------------------------------------
+  // By default, months with no finds are hidden so the user isn't forced to
+  // scroll through large empty stretches. A single "Reveal Empty Months" button
+  // sits at the most recent gap and expands every hidden month at once.
+  const monthsWithFinds = new Set<string>();
+  finds.forEach(f => {
+    const d = new Date(f.found_at);
+    monthsWithFinds.add(`${d.getFullYear()}-${d.getMonth()}`);
+  });
+
+  // monthLabelData partitions every grid row into a contiguous, newest-first
+  // month section. Tag each reversed row with its month section index.
+  const rowMonthIndex: number[] = new Array(totalRows).fill(-1);
+  {
+    let r = 0;
+    monthLabelData.forEach(({ numRows }, mi) => {
+      for (let k = 0; k < numRows && r < totalRows; k++, r++) rowMonthIndex[r] = mi;
+    });
+  }
+
+  // A month may be hidden only if it has no finds AND no day still carries luck.
+  // The current month is always shown, so collapsing begins at the previous month.
+  // In a find-less month luck only decays, so day 1 holds the month's peak — if it
+  // rounds to zero (no cell tint) the whole month is dark and safe to collapse.
+  const currentMonthKey = `${today.getFullYear()}-${today.getMonth()}`;
+  const monthCollapsible = monthLabelData.map(({ date }) => {
+    const key = `${date.getFullYear()}-${date.getMonth()}`;
+    if (key === currentMonthKey) return false;
+    if (monthsWithFinds.has(key)) return false;
+    const peakLuck = Math.round(computeLuck(finds, new Date(date.getFullYear(), date.getMonth(), 1, 23, 59, 59)));
+    return peakLuck <= 0;
+  });
+
+  // Rows eligible to hide: in a collapsible month and (defensively) holding no find.
+  const findRowSet = new Set(findReversedRows);
+  const collapsibleRows = new Set<number>();
+  for (let r = 0; r < totalRows; r++) {
+    if (!findRowSet.has(r) && monthCollapsible[rowMonthIndex[r]]) collapsibleRows.add(r);
+  }
+  const hasEmptyMonths = collapsibleRows.size > 0;
+  const showRevealButton = hasEmptyMonths && !revealed;
+  // A row starts a new unlucky period (gets its own button) when it's collapsible
+  // and the row above it isn't — i.e. the top of each maximal run of hidden rows.
+  const isPeriodStart = (r: number) => collapsibleRows.has(r) && !collapsibleRows.has(r - 1);
+
+  // The reveal button spans this many grid rows, so its taller content (waves +
+  // label) has breathing room above and below instead of overlapping day cells.
+  // Mobile cells are short (~1.5rem), so it needs more of them to fit.
+  const BUTTON_ROWS = colCount === 1 ? 9 : 2;
+
+  // Map each original reversed row to its displayed row. When collapsed, each
+  // hidden run is dropped and replaced by one button's worth of rows at its top.
+  const displayRowOf = new Map<number, number>();
+  const buttonDisplayRows: number[] = [];
+  {
+    let dr = 0;
+    for (let r = 0; r < totalRows; r++) {
+      if (showRevealButton && collapsibleRows.has(r)) {
+        if (isPeriodStart(r)) { buttonDisplayRows.push(dr); dr += BUTTON_ROWS; }
+        continue;
+      }
+      displayRowOf.set(r, dr);
+      dr++;
+    }
+  }
+  const displayTotalRows = displayRowOf.size + buttonDisplayRows.length * BUTTON_ROWS;
+
+  // First visible day cell — anchors the height-measuring probe (the newest cell
+  // can live in a hidden month, so we can't rely on index 0).
+  let firstVisibleCellIndex = -1;
+  for (let i = 0; i < reversedCells.length; i++) {
+    if (reversedCells[i] && displayRowOf.has(Math.floor(i / colCount))) { firstVisibleCellIndex = i; break; }
+  }
+
   // Compute the sentinel fraction (0–1 of total column height) for each find.
   // Approximate column height from measured row metrics.
   const rowH = cellHeightPx + rowGapPx;
-  const approxColH = totalRows * rowH + dowRowHeightPx + rowGapPx;
+  const approxColH = displayTotalRows * rowH + dowRowHeightPx + rowGapPx;
   // Scrollable range within the column: how far the user can actually scroll before the
   // page bottom is hit. Clamped to at least half the column so short calendars still work.
   const usableH = approxColH > 0 ? Math.max(approxColH * 0.5, approxColH - viewportH) : 0;
@@ -449,10 +543,11 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
       return { find, fraction };
     }
     const row = findReversedRows[idx];
+    const displayRow = displayRowOf.get(row) ?? row;
     const group = rowGroups.get(row)!;
     const posInRow = group.indexOf(idx);
     const totalInRow = group.length;
-    return { find, fraction: (row + posInRow / totalInRow) / totalRows };
+    return { find, fraction: (displayRow + posInRow / totalInRow) / displayTotalRows };
   });
 
   const TOP_N = 5;
@@ -474,12 +569,34 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
   // Ghosts render first (behind) so their z-index can stay 0.
   const combinedSlice = [...ghostSlice, ...stackSlice];
 
-  // Grid row start for each month label when rendered inside the grid (mobile).
-  const monthLabelGridRows = monthLabelData.map((_, idx) => {
-    let start = 0;
-    for (let k = 0; k < idx; k++) start += monthLabelData[k].numRows;
-    return start + 1;
-  });
+  // Left-column label sections in display order. Hidden runs collapse away; a
+  // spacer section per run keeps the column aligned with each grid button.
+  // Grouping visible rows by month (rather than re-deriving emptiness) keeps the
+  // two columns aligned even at week-rows shared by an empty and a non-empty month.
+  type LabelSection = { key: string; date: Date | null; rows: number };
+  const labelSections: LabelSection[] = [];
+  {
+    let currentMi = -1;
+    let currentRows = 0;
+    const flush = () => {
+      if (currentRows > 0) {
+        const { date } = monthLabelData[currentMi];
+        labelSections.push({ key: `${date.getFullYear()}-${date.getMonth()}`, date, rows: currentRows });
+      }
+      currentRows = 0;
+    };
+    for (let r = 0; r < totalRows; r++) {
+      if (showRevealButton && isPeriodStart(r)) {
+        flush();
+        labelSections.push({ key: `reveal-spacer-${r}`, date: null, rows: BUTTON_ROWS });
+      }
+      if (!displayRowOf.has(r)) continue;
+      const mi = rowMonthIndex[r];
+      if (mi !== currentMi) { flush(); currentMi = mi; }
+      currentRows++;
+    }
+    flush();
+  }
 
   return (
     <>
@@ -489,19 +606,21 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
           {colCount > 1 && dowRowHeightPx > 0 && (
             <div style={{ height: dowRowHeightPx + rowGapPx, flexShrink: 0 }} />
           )}
-          {monthLabelData.map(({ date, numRows }, idx) => {
-            // Pixel-exact height: numRows × (cellH + gap), minus one gap on the last section.
+          {labelSections.map(({ key, date, rows }, idx) => {
+            // Pixel-exact height: rows × (cellH + gap), minus one gap on the last section.
             const rowH = cellHeightPx + rowGapPx;
-            const isLast = idx === monthLabelData.length - 1;
-            const exactH = cellHeightPx > 0 ? numRows * rowH - (isLast ? rowGapPx : 0) : undefined;
+            const isLast = idx === labelSections.length - 1;
+            const exactH = cellHeightPx > 0 ? rows * rowH - (isLast ? rowGapPx : 0) : undefined;
             return (
               <div
-                key={`${date.getFullYear()}-${date.getMonth()}`}
-                style={exactH !== undefined ? { height: exactH, flexShrink: 0 } : { flex: numRows }}
+                key={key}
+                style={exactH !== undefined ? { height: exactH, flexShrink: 0 } : { flex: rows }}
               >
-                <div className="cal-month-label">
-                  <MonthLabel date={date} today={today} />
-                </div>
+                {date && (
+                  <div className="cal-month-label">
+                    <MonthLabel date={date} today={today} />
+                  </div>
+                )}
               </div>
             );
           })}
@@ -540,13 +659,15 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
           if (added <= 0) return null;
           const diameter = luckAddedToCircleDiameterPct(added);
           const rowIndex = Math.floor(i / colCount);
+          const displayRow = displayRowOf.get(rowIndex);
+          if (displayRow === undefined) return null;
           const colIndex = (i % colCount) + 1;
           return (
             <div
               key={`circle-${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`}
               className={colCount > 1 ? `day-num-${colIndex} pointer-events-none cal-find-circle` : 'pointer-events-none cal-find-circle'}
               style={{
-                gridRowStart: rowIndex + 2,
+                gridRowStart: displayRow + 2,
                 ...(colCount === 1 && { gridColumn: 1 }),
                 width: '100%',
                 height: 0,
@@ -563,13 +684,15 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
         {/* Cell pass — rendered after circles, sits on top */}
         {reversedCells.map((date, i) => {
           const rowIndex = Math.floor(i / colCount);
+          const displayRow = displayRowOf.get(rowIndex);
+          if (displayRow === undefined) return null;
           const colIndex = (i % colCount) + 1;
 
           if (!date) return (
             <div
               key={`blank-${i}`}
               className={`aspect-square day-num-${colIndex}`}
-              style={{ gridRowStart: rowIndex + 2 }}
+              style={{ gridRowStart: displayRow + 2 }}
             />
           );
 
@@ -589,11 +712,11 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
           const dayCell = (
             <div
               key={cellKey}
-              ref={i === 0 ? probeRef : undefined}
+              ref={i === firstVisibleCellIndex ? probeRef : undefined}
               className={['day-cell', `day-num-${colIndex}`, isWeekend && 'weekend', isToday && 'today', topFind && 'has-find'].filter(Boolean).join(' ')}
               style={{
-                gridRowStart: rowIndex + 2,
-                '--day-bg': `color-mix(in srgb, var(--color-accent) ${opacity * 100 * .75}%, var(--color-surface))`,
+                gridRowStart: displayRow + 2,
+                '--luck': opacity,
               } as React.CSSProperties}
               onClick={topFind ? e => openFind(topFind, e.currentTarget as HTMLElement) : undefined}
             >
@@ -616,6 +739,30 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
 
           return dayCell;
         })}
+
+        {/* Reveal buttons — one per hidden unlucky period, at the period's top. */}
+        {showRevealButton && buttonDisplayRows.map((dispRow) => (
+          <div
+            key={`reveal-${dispRow}`}
+            className="cal-reveal-row"
+            style={{
+              gridRow: `${dispRow + 2} / span ${BUTTON_ROWS}`,
+              gridColumn: colCount > 1 ? '1 / -1' : 1,
+              '--button-rows': BUTTON_ROWS,
+              ...(cellHeightPx ? { '--cell-h': `${cellHeightPx}px` } : {}),
+            } as React.CSSProperties}
+          >
+            <button type="button" className="cal-reveal-button" onClick={() => setRevealed(true)}>
+              <svg className="cal-wave cal-wave-top" viewBox="0 0 12 48" preserveAspectRatio="none" aria-hidden="true">
+                <path d={REVEAL_WAVE_PATH} fill="none" stroke="currentColor" strokeWidth={2} vectorEffect="non-scaling-stroke" />
+              </svg>
+              <span className="cal-reveal-label">{SHOW_EMPTY_MONTHS}</span>
+              <svg className="cal-wave cal-wave-bottom" viewBox="0 0 12 48" preserveAspectRatio="none" aria-hidden="true">
+                <path d={REVEAL_WAVE_PATH} fill="none" stroke="currentColor" strokeWidth={2} vectorEffect="non-scaling-stroke" />
+              </svg>
+            </button>
+          </div>
+        ))}
       </div>
       </div>
 

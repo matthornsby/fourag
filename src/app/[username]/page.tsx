@@ -122,12 +122,12 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
   const profileHeader = (
     <div className="flex flex-col gap-3 px-5 sm:px-7 py-6 items-center">
       <UserAvatar username={typedProfile.username} avatarUrl={typedProfile.avatar_url} />
-      <div className="flex flex-col gap-3 text-balance text-center">
+      <div className="flex flex-col gap-4 text-balance text-center">
         <h1 className="text-4xl font-semibold text-text-primary text-serif">
           {pageHeading(typedProfile.username, isOwner)}
         </h1>
         {typedProfile.bio && (
-          <p className="text-base sm:text-lg text-text-secondary">{prettify(typedProfile.bio)}</p>
+          <p className="text-base sm:text-lg text-text-secondary mb-2">{prettify(typedProfile.bio)}</p>
         )}
         {totalClovers > 0 && sinceStr && bestCloverFind && bestCloverDateStr && (
           <p className="text-base text-text-secondary">
@@ -155,7 +155,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
           </p>
         )}
         {isOwner && (
-          <p>
+          <p className="mt-3">
         <Link
           href="/account/profile"
           className="self-start text-sm button button-secondary text-center hover:text-text-primary transition-colors duration-150"
