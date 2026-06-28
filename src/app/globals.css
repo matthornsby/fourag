@@ -742,6 +742,15 @@ body {
 
 .find-carousel-track {
   pointer-events: none;
+  /* Inset by the safe areas so cards centre and pan within the visible region,
+     clear of the status bar / home indicator / notch. The backdrop (a sibling)
+     stays full-screen. env() is 0 where there's no cutout, so this is a no-op there. */
+  position: absolute;
+  inset:
+    env(safe-area-inset-top)
+    env(safe-area-inset-right)
+    env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
 }
 
 .find-carousel-slide {

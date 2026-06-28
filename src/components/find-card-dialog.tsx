@@ -57,6 +57,7 @@ export function FindCardDialog({
   const activeIndex = currentId !== null ? (indexById.get(currentId) ?? 0) : 0;
 
   const viewportRef = useRef<HTMLDivElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
   const slideRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const positionRef = useRef(activeIndex);          // continuous carousel position (float)
@@ -87,7 +88,11 @@ export function FindCardDialog({
   // (with a small margin). 0 → the card fits and doesn't pan.
   const overhang = (card: HTMLElement | null) => {
     if (!card) return 0;
-    const avail = window.innerHeight - 2 * VMARGIN;
+    // The track is inset by the safe-area insets (see globals.css), so measuring it —
+    // rather than window.innerHeight — keeps tall cards out from under the status bar
+    // and home indicator. Cards are centred within this same inset track.
+    const trackH = trackRef.current?.getBoundingClientRect().height ?? window.innerHeight;
+    const avail = trackH - 2 * VMARGIN;
     return Math.max(0, (card.offsetHeight - avail) / 2);
   };
 
@@ -451,8 +456,9 @@ export function FindCardDialog({
         onClick={triggerClose}
       />
 
-      {/* Track */}
-      <div className="find-carousel-track absolute inset-0">
+      {/* Track — inset by the safe areas so cards centre/pan within the visible
+          region (the full-screen backdrop above still covers the safe areas). */}
+      <div ref={trackRef} className="find-carousel-track">
         {windowFinds.map((f) => (
           <div
             key={f.id}
