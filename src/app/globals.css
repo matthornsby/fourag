@@ -123,6 +123,14 @@ html {
   overflow-x: clip;
 }
 
+main {
+  /* iOS Safari ignores overflow clipping on the root element, so the html rule
+     above isn't enough there. Clipping on a normal block (main) is honoured —
+     this is where the overflowing content (luck discs etc.) actually lives.
+     `clip` keeps the sticky photo column / month labels working. */
+  overflow-x: clip;
+}
+
 body {
   background-color: var(--color-background);
   color: var(--color-text-primary);
@@ -192,7 +200,11 @@ body {
 
   @apply border-b border-border bg-surface;
   height: var(--header-height);
-  overflow: visible;
+  /* Clip the logo's intentional leftward bleed at the screen edge so it doesn't
+     create horizontal page scroll on iOS (where root-level clipping is ignored).
+     Keep the y axis visible. */
+  overflow-x: clip;
+  overflow-y: visible;
 
   #header-content {
     @apply mx-auto w-full  lg:w-5xl xl:w-6xl px-4 lg:px-0 flex items-center justify-between;
@@ -459,8 +471,8 @@ body {
   grid-column-end: auto;
   border-radius: var(--cell-border-radius);
   background-image: linear-gradient(to bottom, var(--day-bg), color-mix(in srgb, var(--day-bg) 60%, transparent));
-  border: solid 1px color-mix(in srgb, var(--color-background) 20%, transparent);
-   /* border-top: solid 1px color-mix(in srgb, contrast-color(var(--color-background)) 10%, transparent);  */
+  /* border: solid 1px color-mix(in srgb, var(--color-background) 20%, transparent); */
+   border-top: solid 1px color-mix(in srgb, contrast-color(var(--color-background)) 10%, transparent); 
   
 
   --day-cell-blur-base: 30px;
