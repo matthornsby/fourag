@@ -76,7 +76,7 @@ export default async function RootLayout({
       {...(prefs.theme === "light" ? { "data-theme": "light" } : {})}
       className={`${geistSans.variable} ${geistMono.variable} ${fraunces.variable} h-full antialiased`}
     >
-      <body suppressHydrationWarning className="min-h-full flex flex-col">
+      <body suppressHydrationWarning className="min-h-[100dvh] flex flex-col">
         <div id="wallpaper" aria-hidden="true" />
         <HashRedirect />
         <SiteHeader user={user && username ? { id: user.id, username, isAdmin, avatarUrl } : null} />
