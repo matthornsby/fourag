@@ -56,6 +56,13 @@ function sineWavePath(yStart: number, yEnd: number, wavelength: number, amp: num
 // viewBox 0 0 12 48 → 2 wavelengths visible; drawn from -24 to 72 for the scroll loop.
 const REVEAL_WAVE_PATH = sineWavePath(-24, 72, 24, 2.5, 6);
 
+// "Sep 2024 – Mar 2026" (or a single "Mar 2025" when the gap is within one month).
+function formatHiddenRange(min: Date, max: Date): string {
+  const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+  const a = fmt(min), b = fmt(max);
+  return a === b ? a : `${a} – ${b}`;
+}
+
 function getMeta(attr: string, value: string): string {
   return (document.querySelector(`meta[${attr}="${value}"]`) as HTMLMetaElement | null)?.content ?? '';
 }
@@ -174,7 +181,8 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
   const [evenSentinels, setEvenSentinels] = useState(true);
   const [colCount, setColCount] = useState(7);
   // When false (default), months with no finds are collapsed behind a reveal button.
-  const [revealed, setRevealed] = useState(false);
+  // Set of period ids (each period's top original row) that the user has revealed.
+  const [revealedPeriods, setRevealedPeriods] = useState<Set<number>>(new Set());
   const [selectedFind, setSelectedFind] = useState<(Find & { clovers: Clover[] }) | null>(null);
   const [sourceRect, setSourceRect] = useState<DOMRect | null>(null);
   const activeCardRef = useRef<HTMLElement | null>(null);
@@ -487,33 +495,58 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
   for (let r = 0; r < totalRows; r++) {
     if (!findRowSet.has(r) && monthCollapsible[rowMonthIndex[r]]) collapsibleRows.add(r);
   }
-  const hasEmptyMonths = collapsibleRows.size > 0;
-  const showRevealButton = hasEmptyMonths && !revealed;
   // A row starts a new unlucky period (gets its own button) when it's collapsible
   // and the row above it isn't — i.e. the top of each maximal run of hidden rows.
   const isPeriodStart = (r: number) => collapsibleRows.has(r) && !collapsibleRows.has(r - 1);
 
-  // The reveal button spans this many grid rows, so its taller content (waves +
-  // label) has breathing room above and below instead of overlapping day cells.
-  // Mobile cells are short (~1.5rem), so it needs more of them to fit.
-  const BUTTON_ROWS = colCount === 1 ? 9 : 2;
+  // Tag every collapsible row with its period id (the run's top row), so each
+  // period can be revealed independently.
+  const periodStartOf = new Map<number, number>();
+  {
+    let runStart = -1;
+    for (let r = 0; r < totalRows; r++) {
+      if (!collapsibleRows.has(r)) continue;
+      if (isPeriodStart(r)) runStart = r;
+      periodStartOf.set(r, runStart);
+    }
+  }
+  // A row is hidden only while its own period stays collapsed.
+  const isHidden = (r: number) => collapsibleRows.has(r) && !revealedPeriods.has(periodStartOf.get(r)!);
 
-  // Map each original reversed row to its displayed row. When collapsed, each
-  // hidden run is dropped and replaced by one button's worth of rows at its top.
+  // Earliest→latest hidden month per period, for the button's range label. Uses
+  // each row's assigned month (not raw cell dates) so boundary weeks that straddle
+  // a shown month don't bleed into the range.
+  const periodRange = new Map<number, { min: Date; max: Date }>();
+  for (let r = 0; r < totalRows; r++) {
+    if (!collapsibleRows.has(r)) continue;
+    const ps = periodStartOf.get(r)!;
+    const monthDate = monthLabelData[rowMonthIndex[r]].date;
+    const cur = periodRange.get(ps);
+    if (!cur) periodRange.set(ps, { min: monthDate, max: monthDate });
+    else { if (monthDate < cur.min) cur.min = monthDate; if (monthDate > cur.max) cur.max = monthDate; }
+  }
+
+  // The reveal button spans this many grid rows, so its taller content (waves +
+  // label + range) has breathing room above and below instead of overlapping
+  // day cells. Mobile cells are short (~1.5rem), so it needs more of them to fit.
+  const BUTTON_ROWS = colCount === 1 ? 9 : 3;
+
+  // Map each original reversed row to its displayed row. A still-hidden run is
+  // dropped and replaced by one button at its top; a revealed run renders inline.
   const displayRowOf = new Map<number, number>();
-  const buttonDisplayRows: number[] = [];
+  const buttons: { displayRow: number; periodStart: number }[] = [];
   {
     let dr = 0;
     for (let r = 0; r < totalRows; r++) {
-      if (showRevealButton && collapsibleRows.has(r)) {
-        if (isPeriodStart(r)) { buttonDisplayRows.push(dr); dr += BUTTON_ROWS; }
+      if (isHidden(r)) {
+        if (isPeriodStart(r)) { buttons.push({ displayRow: dr, periodStart: r }); dr += BUTTON_ROWS; }
         continue;
       }
       displayRowOf.set(r, dr);
       dr++;
     }
   }
-  const displayTotalRows = displayRowOf.size + buttonDisplayRows.length * BUTTON_ROWS;
+  const displayTotalRows = displayRowOf.size + buttons.length * BUTTON_ROWS;
 
   // First visible day cell — anchors the height-measuring probe (the newest cell
   // can live in a hidden month, so we can't rely on index 0).
@@ -586,7 +619,7 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
       currentRows = 0;
     };
     for (let r = 0; r < totalRows; r++) {
-      if (showRevealButton && isPeriodStart(r)) {
+      if (isHidden(r) && isPeriodStart(r)) {
         flush();
         labelSections.push({ key: `reveal-spacer-${r}`, date: null, rows: BUTTON_ROWS });
       }
@@ -740,29 +773,40 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
           return dayCell;
         })}
 
-        {/* Reveal buttons — one per hidden unlucky period, at the period's top. */}
-        {showRevealButton && buttonDisplayRows.map((dispRow) => (
-          <div
-            key={`reveal-${dispRow}`}
-            className="cal-reveal-row"
-            style={{
-              gridRow: `${dispRow + 2} / span ${BUTTON_ROWS}`,
-              gridColumn: colCount > 1 ? '1 / -1' : 1,
-              '--button-rows': BUTTON_ROWS,
-              ...(cellHeightPx ? { '--cell-h': `${cellHeightPx}px` } : {}),
-            } as React.CSSProperties}
-          >
-            <button type="button" className="cal-reveal-button" onClick={() => setRevealed(true)}>
-              <svg className="cal-wave cal-wave-top" viewBox="0 0 12 48" preserveAspectRatio="none" aria-hidden="true">
-                <path d={REVEAL_WAVE_PATH} fill="none" stroke="currentColor" strokeWidth={2} vectorEffect="non-scaling-stroke" />
-              </svg>
-              <span className="cal-reveal-label">{SHOW_EMPTY_MONTHS}</span>
-              <svg className="cal-wave cal-wave-bottom" viewBox="0 0 12 48" preserveAspectRatio="none" aria-hidden="true">
-                <path d={REVEAL_WAVE_PATH} fill="none" stroke="currentColor" strokeWidth={2} vectorEffect="non-scaling-stroke" />
-              </svg>
-            </button>
-          </div>
-        ))}
+        {/* Reveal buttons — one per hidden unlucky period; each reveals only its
+            own block and shows the date range it's hiding. */}
+        {buttons.map(({ displayRow, periodStart }) => {
+          const range = periodRange.get(periodStart);
+          return (
+            <div
+              key={`reveal-${periodStart}`}
+              className="cal-reveal-row"
+              style={{
+                gridRow: `${displayRow + 2} / span ${BUTTON_ROWS}`,
+                gridColumn: colCount > 1 ? '1 / -1' : 1,
+                '--button-rows': BUTTON_ROWS,
+                ...(cellHeightPx ? { '--cell-h': `${cellHeightPx}px` } : {}),
+              } as React.CSSProperties}
+            >
+              <button
+                type="button"
+                className="cal-reveal-button"
+                onClick={() => setRevealedPeriods(prev => new Set(prev).add(periodStart))}
+              >
+                <svg className="cal-wave cal-wave-top" viewBox="0 0 12 48" preserveAspectRatio="none" aria-hidden="true">
+                  <path d={REVEAL_WAVE_PATH} fill="none" stroke="currentColor" strokeWidth={2} vectorEffect="non-scaling-stroke" />
+                </svg>
+                <span className="cal-reveal-text">
+                  <span className="cal-reveal-label">{SHOW_EMPTY_MONTHS}</span>
+                  {range && <span className="cal-reveal-range">{formatHiddenRange(range.min, range.max)}</span>}
+                </span>
+                <svg className="cal-wave cal-wave-bottom" viewBox="0 0 12 48" preserveAspectRatio="none" aria-hidden="true">
+                  <path d={REVEAL_WAVE_PATH} fill="none" stroke="currentColor" strokeWidth={2} vectorEffect="non-scaling-stroke" />
+                </svg>
+              </button>
+            </div>
+          );
+        })}
       </div>
       </div>
 

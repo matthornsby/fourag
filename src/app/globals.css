@@ -456,6 +456,12 @@ body {
   overflow: visible;
   pointer-events: none;
   height: calc(var(--cell-h, 1.5rem) * var(--button-rows, 2));
+
+  /* Mobile: anchor the affordance toward the centre rather than the screen edge. */
+  @media (width < theme(--breakpoint-md)) {
+    [data-orientation="right-handed"] & { justify-content: flex-end; }
+    [data-orientation="left-handed"] & { justify-content: flex-start; }
+  }
 }
 
 .cal-reveal-button {
@@ -465,8 +471,8 @@ body {
   align-items: center;
   justify-content: center;
   gap: calc(var(--cell-h, 1.5rem) * 0.15);
-  
-  width: max-content;
+  width: 100%;
+  height: calc( 100% - (var(--cal-gap) * 4));
   overflow: visible;
   text-align: center;
   font-size: var(--text-xs);
@@ -477,41 +483,76 @@ body {
   border: none;
   cursor: pointer;
   padding: 0;
-  .cal-reveal-label {
-    line-height: .5;
+
+  .cal-reveal-text {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35em;
+    width: 100%;
+    flex-shrink: 0;
+  
+    .cal-reveal-label {
+      line-height: .5;
+    }
+  
+    .cal-reveal-range {
+      color: var(--color-text-secondary);
+      font-size: 0.85em;
+      font-weight: 400;
+      letter-spacing: 0.02em;
+    }
+  }
+
+  .cal-wave {
+    display: block;
+    width: 0.8rem;
+    /* Grow to share the space left over after the text, so the waves fill the row
+       but shrink (rather than overflow) when the label wraps to more lines. */
+    flex: 1;
+    min-height: 0;
+    /* Clip to the viewBox so only the seamless one-wavelength window shows; the path
+       is drawn a wavelength past each end, so the looped translate reads as a single
+       continuously flowing line rather than one that jumps on each reset. */
+    overflow: hidden;
+  }
+  
+  /* Translate resolves in viewBox units, so 24 == one wavelength: the wave flows
+     along the line in place without shifting the line's position. */
+  .cal-wave path {
+    transform-box: view-box;
+  }
+  
+  /* The flow animation is always assigned but paused, so on un-hover the wave
+     freezes at its current frame instead of snapping back to the start. */
+  .cal-wave-top path {
+    animation: cal-wave-flow 1.4s linear infinite paused;
+  }
+  .cal-wave-bottom path {
+    animation: cal-wave-flow-rev 1.4s linear infinite paused;
+  }
+  &:hover .cal-wave path {
+    animation-play-state: running;
+  }
+
+  /* Mobile: the date strip is narrow, so let the label wrap. Nested here (matching
+     the base label's specificity) so the wrap override wins by source order. */
+  @media (width < theme(--breakpoint-md)) {
+    max-width: 11rem;
+    font-size: 0.7rem;
+
+    .cal-reveal-text .cal-reveal-label {
+      white-space: normal;
+      line-height: 1.4;
+    }
   }
 }
 
-.cal-wave {
-  display: block;
-  width: 0.8rem;
-  /* Scale with the row's height (--button-rows cells) so the waves fill the row
-     instead of looking squished — taller on mobile, where the row is 5 cells. */
-  height: calc(var(--cell-h, 1.5rem) * var(--button-rows, 2) * 0.35);
-  flex-shrink: 0;
-  /* Clip to the viewBox so only the seamless one-wavelength window shows; the path
-     is drawn a wavelength past each end, so the looped translate reads as a single
-     continuously flowing line rather than one that jumps on each reset. */
-  overflow: hidden;
-}
 
-/* Translate resolves in viewBox units, so 24 == one wavelength: the wave flows
-   along the line in place without shifting the line's position. */
-.cal-wave path {
-  transform-box: view-box;
-}
 
-/* The flow animation is always assigned but paused, so on un-hover the wave
-   freezes at its current frame instead of snapping back to the start. */
-.cal-wave-top path {
-  animation: cal-wave-flow 1.4s linear infinite paused;
-}
-.cal-wave-bottom path {
-  animation: cal-wave-flow-rev 1.4s linear infinite paused;
-}
-.cal-reveal-button:hover .cal-wave path {
-  animation-play-state: running;
-}
+
+
+
 
 @keyframes cal-wave-flow {
   from { transform: translateY(0); }
@@ -524,18 +565,6 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .cal-wave path { animation: none; }
-}
-
-/* Mobile: the grid column is a narrow date strip pinned to one screen edge, so
-   let the label wrap and anchor the affordance toward the centre, not off-edge. */
-@media (width < theme(--breakpoint-md)) {
-  .cal-reveal-button {
-     max-width: 11rem; font-size: 0.7rem; 
-     .cal-reveal-label { white-space: normal; line-height: 1.4; }
-    }
-  
-  [data-orientation="right-handed"] .cal-reveal-row { justify-content: flex-end; }
-  [data-orientation="left-handed"] .cal-reveal-row { justify-content: flex-start; }
 }
 
 /* The luck disc that sits behind a day cell. The wrapper (.cal-find-circle in the
