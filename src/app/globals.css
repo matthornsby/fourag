@@ -407,18 +407,32 @@ body {
   overflow: hidden;
   border-radius: var(--radius-xl);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-  /* Opacity fades over .2s starting at .1s in. transform's easing is heavily
-     front-loaded (~90% of the move happens in its first ~200ms), so a .3s
-     delay put the fade entirely after the card had already flown off-screen —
-     invisible, even though it was technically animating smoothly. .1s instead
-     overlaps the fade with the card still on/near screen.
+  /* Opacity fades over .2s with no delay. transform's easing is heavily
+     front-loaded (~90% of the move happens in its first ~200ms), so a delay
+     (previously .3s, then .1s) put the fade increasingly late relative to the
+     motion — a .3s delay made it start after the card had already flown
+     off-screen (invisible, even though technically animating). No delay also
+     matters on multi-exit bursts (seen on mobile touch scroll, which fires
+     fewer/larger scroll deltas than desktop wheel scroll): several ghosts can
+     be exiting at once, all rendered above the stack, and each stays near-
+     opaque and near its original position for its first ~100ms — with several
+     stacked on top of each other and the stack cards, that reads as "the
+     stack disappeared". Fading immediately shortens that opaque/overlapping
+     window as much as possible without losing the visible fade itself.
      Written as longhand properties, not the transition shorthand — this
      project's CSS build silently dropped the delay when written as
      "opacity 0.2s ease 0.3s" in a shorthand list. */
   transition-property: transform, opacity;
   transition-duration: 0.5s, 0.2s;
   transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1), ease;
-  transition-delay: 0s, 0.1s;
+  transition-delay: 0s, 0s;
+
+  /* Mobile scrolls by day rather than week (single column), so consecutive
+     exits are naturally spaced further apart in scroll distance — there's no
+     need for the peel-away to be as snappy as it is on desktop. */
+  @media (width < theme(--breakpoint-md)) {
+    transition-duration: 0.9s, 0.4s;
+  }
 
   &.is-landscape {
     inset-inline: 0;
