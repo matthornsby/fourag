@@ -531,8 +531,14 @@ body {
   .cal-wave-bottom path {
     animation: cal-wave-flow-rev 1.4s linear infinite paused;
   }
-  &:hover .cal-wave path {
-    animation-play-state: running;
+  /* Scoped to real hover-capable pointers (mouse/trackpad) — on touch devices,
+     any element with an unconditional :hover rule requires a first tap to enter
+     the hover state and a second tap to actually click, so unscoped :hover here
+     would make this button need two taps instead of one. */
+  @media (hover: hover) {
+    &:hover .cal-wave path {
+      animation-play-state: running;
+    }
   }
 
   /* Mobile: the date strip is narrow, so let the label wrap. Nested here (matching
