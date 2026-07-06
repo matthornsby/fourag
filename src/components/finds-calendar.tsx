@@ -169,9 +169,16 @@ function MonthLabel({ date, today }: { date: Date; today: Date }) {
 
 // px a sentinel must travel above viewport top before its card is fully gone
 const EXIT_DISTANCE = 120;
+// Once exited, a sentinel must scroll back within this margin (a much smaller
+// distance) before its card re-enters — the gap between the two prevents flapping.
+const REENTER_DISTANCE = 40;
+
+// Keeps computed pose values (px/deg) out of floating-point-noise territory
+// (e.g. 5.6000000000000005) without losing meaningful precision.
+function round2(n: number) { return Math.round(n * 100) / 100; }
 
 export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initialFindId, basePath = '', header }: Props) {
-  const [exitProgress, setExitProgress] = useState<Map<string, number>>(new Map());
+  const [exitedIds, setExitedIds] = useState<Set<string>>(new Set());
   const [orientations, setOrientations] = useState<Record<string, 'landscape' | 'portrait'>>({});
   const [photoSide, setPhotoSide] = useState<'left' | 'right'>('left');
   const [weekStart, setWeekStart] = useState<0 | 1>(weekStartsOn);
@@ -278,17 +285,22 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
 
   useEffect(() => {
     const update = () => {
-      setExitProgress(prev => {
-        const entries: [string, number][] = [];
+      setExitedIds(prev => {
         let changed = false;
+        const next = new Set(prev);
         pendingSentinels.current.forEach((el, findId) => {
+          // Hysteresis: exiting requires crossing -EXIT_DISTANCE, but re-entering only
+          // requires scrolling back within REENTER_DISTANCE. Without a gap between the
+          // two thresholds, scroll position settling near one exact pixel (e.g. momentum
+          // scroll deceleration on mobile) would flap the class on/off every tick, so the
+          // transition kept restarting instead of ever completing.
           const top = el.getBoundingClientRect().top;
-          const progress = top >= 0 ? 0 : Math.min(1, -top / EXIT_DISTANCE);
-          entries.push([findId, progress]);
-          if (prev.get(findId) !== progress) changed = true;
+          const wasExited = prev.has(findId);
+          const exited = wasExited ? top < -REENTER_DISTANCE : top < -EXIT_DISTANCE;
+          if (exited && !wasExited) { next.add(findId); changed = true; }
+          else if (!exited && wasExited) { next.delete(findId); changed = true; }
         });
-        if (!changed) return prev;
-        return new Map(entries);
+        return changed ? next : prev;
       });
     };
 
@@ -589,17 +601,32 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
   const oldestFirst = [...sortedFinds].reverse();
 
   // Stack cards: non-fully-exited. TOP_N visible + 1 invisible buffer that fades in.
-  const stackFinds = oldestFirst.filter(f => (exitProgress.get(f.id) ?? 0) < 1);
+  const stackFinds = oldestFirst.filter(f => !exitedIds.has(f.id));
   const stackSlice = stackFinds.slice(-(TOP_N + 1));
   const stackIdxMap = new Map(stackSlice.map((f, i) => [f.id, i]));
 
   // Ghost cards: recently exited, kept in the render tree (same key = same <img> node)
   // so the browser doesn't unload the decoded image on re-appear.
-  const ghostSlice = oldestFirst
-    .filter(f => (exitProgress.get(f.id) ?? 0) >= 1)
-    .slice(-TOP_N);
+  // exitedIds is a Set, which iterates in insertion order — slicing that (not a
+  // chronological/date-ordered array) is what makes "recently exited" mean
+  // "recently exited in time". Slicing oldestFirst.filter(exited) instead would
+  // pick the date-newest finds among all exited ones, which — since newest exits
+  // first as the user scrolls — would forever be the very first handful to ever
+  // exit: every subsequent (older) exit sits earlier in date order and could
+  // never displace them, so the ghost slice would permanently freeze after TOP_N
+  // exits no matter how much further the user scrolled.
+  const findById = new Map(sortedFinds.map(f => [f.id, f]));
+  const ghostSlice = [...exitedIds]
+    .slice(-TOP_N)
+    .map(id => findById.get(id))
+    .filter((f): f is NonNullable<typeof f> => !!f);
+  // A card mid-exit should stay above the stack while it animates away (like a card
+  // being flicked off the top of a pile) — not drop behind it the instant it exits.
+  // Ghosts get a z-index range above every stack card, and more-recently-exited
+  // ghosts stack above older ones (which have already finished fading anyway).
+  const GHOST_Z_BASE = 100;
+  const ghostIdxMap = new Map(ghostSlice.map((f, i) => [f.id, i]));
 
-  // Ghosts render first (behind) so their z-index can stay 0.
   const combinedSlice = [...ghostSlice, ...stackSlice];
 
   // Left-column label sections in display order. Hidden runs collapse away; a
@@ -841,27 +868,33 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
           {/* Square container: portrait fills height (3/4 wide), landscape fills width (3/4 tall) — equal area, no crop */}
           <div className="cal-photo-frame relative w-full aspect-square shrink-0">
             {combinedSlice.map((find) => {
-              const exitProg = exitProgress.get(find.id) ?? 0;
-              const isGhost = exitProg >= 1;
+              const isGhost = exitedIds.has(find.id);
               const isLandscape = (orientations[find.id] ?? 'portrait') === 'landscape';
-              const rotation = markerRotation(find.id, 0) * 0.5;
-              const offsetX = markerRotation(find.id, 1) * 0.4;
-              const offsetY = markerRotation(find.id, 2) * 0.4;
-              const exitX = markerRotation(find.id, 3) * 20;
-              const exitY = -(150 + Math.abs(markerRotation(find.id, 4)) * 8);
-              const exitRot = markerRotation(find.id, 5) * 2;
-              const baseTransform = isLandscape
-                ? `translateY(-50%) rotate(${rotation + exitProg * exitRot}deg) translate(${offsetX + exitProg * exitX}px, ${offsetY + exitProg * exitY}px)`
-                : `translateX(-50%) rotate(${rotation + exitProg * exitRot}deg) translate(${offsetX + exitProg * exitX}px, ${offsetY + exitProg * exitY}px)`;
+              const rotation = round2(markerRotation(find.id, 0) * 0.5);
+              const offsetX = round2(markerRotation(find.id, 1) * 0.4);
+              const offsetY = round2(markerRotation(find.id, 2) * 0.4);
+              const exitX = round2(markerRotation(find.id, 3) * 20);
+              const exitY = round2(-(150 + Math.abs(markerRotation(find.id, 4)) * 8));
+              const exitRot = round2(markerRotation(find.id, 5) * 2);
+              // Resting and exit poses live as CSS custom properties (see .cal-photo-card
+              // in globals.css) — toggling the is-exiting class lets CSS transition
+              // between them, instead of recomputing the transform on every scroll event.
+              const poseVars = {
+                '--rest-rot': `${rotation}deg`,
+                '--rest-x': `${offsetX}px`,
+                '--rest-y': `${offsetY}px`,
+                '--exit-rot': `${round2(rotation + exitRot)}deg`,
+                '--exit-x': `${round2(offsetX + exitX)}px`,
+                '--exit-y': `${round2(offsetY + exitY)}px`,
+              } as React.CSSProperties;
 
               if (isGhost) {
+                const ghostIdx = ghostIdxMap.get(find.id) ?? 0;
                 return (
                   <div
                     key={find.id}
-                    className={`absolute overflow-hidden rounded-xl pointer-events-none ${
-                      isLandscape ? 'inset-x-0 top-1/2 aspect-[4/3]' : 'inset-y-0 left-1/2 aspect-[3/4]'
-                    }`}
-                    style={{ zIndex: 0, opacity: 0, transform: baseTransform }}
+                    className={`cal-photo-card is-exiting${isLandscape ? ' is-landscape' : ''}`}
+                    style={{ zIndex: GHOST_Z_BASE + ghostIdx, pointerEvents: 'none', ...poseVars }}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={find.photo_url} alt="" className="w-full h-full object-cover block" />
@@ -872,18 +905,16 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
               const stackIdx = stackIdxMap.get(find.id) ?? 0;
               const posFromTop = stackSlice.length - 1 - stackIdx;
               const isTop = posFromTop === 0;
-              // Opacity only starts dropping in the final 30% of the exit movement.
-              const FADE_START = 0.85;
-              const opacity = posFromTop >= TOP_N ? 0 : Math.max(0, 1 - Math.max(0, exitProg - FADE_START) / (1 - FADE_START));
-              const transition = exitProg === 0 ? 'opacity 400ms ease' : undefined;
 
               // Only the top card is clickable — clicking a buried card has no clean visual meaning.
-              const cardClass = `absolute overflow-hidden rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.5)] ${
-                isLandscape ? 'inset-x-0 top-1/2 aspect-[4/3]' : 'inset-y-0 left-1/2 aspect-[3/4]'
-              }${isTop ? ' cursor-pointer' : ''}`;
+              const cardClass = `cal-photo-card${isLandscape ? ' is-landscape' : ''}${isTop ? ' is-top' : ''}`;
               // Hide the card while its dialog is open.
               const isDialogOpen = selectedFind?.id === find.id;
-              const cardStyle = { zIndex: stackIdx + 1, opacity: isDialogOpen ? 0 : opacity, transition: isDialogOpen ? 'none' : transition, transform: baseTransform };
+              const cardStyle = {
+                zIndex: stackIdx + 1,
+                ...poseVars,
+                ...(isDialogOpen ? { opacity: 0, transition: 'none' } : posFromTop >= TOP_N ? { opacity: 0 } : {}),
+              };
               return (
                 <div
                   key={find.id}

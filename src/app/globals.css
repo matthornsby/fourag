@@ -370,6 +370,100 @@ body {
   to   { transform: translateY(calc(50vh - 50%));}
 }
 
+/* --x/--y/--rot feed into .cal-photo-card's transform via var(). Unregistered
+   custom properties have no defined interpolation, so a browser can leave a
+   transition on transform "discrete" (snap partway through) even though the
+   transition is correctly configured and the end values are correct — exactly
+   the symptom of opacity animating fine while transform doesn't. Registering
+   them with a concrete syntax makes them smoothly (numerically) interpolatable. */
+@property --x {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --y {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --rot {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+/* Each stacked photo card carries its own resting/exit pose as custom
+   properties (randomized per find in JS via markerRotation). Toggling
+   .is-exiting swaps which pose is active, and this transition animates
+   between them — replacing a version that recomputed the transform on every
+   scroll event, which was the source of the exit animation's mobile jank.
+   Layout/appearance that's identical across every card (stack or ghost)
+   lives here instead of being repeated in the className string per render. */
+.cal-photo-card {
+  --x: var(--rest-x);
+  --y: var(--rest-y);
+  --rot: var(--rest-rot);
+  position: absolute;
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  /* Opacity fades over .2s starting at .1s in. transform's easing is heavily
+     front-loaded (~90% of the move happens in its first ~200ms), so a .3s
+     delay put the fade entirely after the card had already flown off-screen —
+     invisible, even though it was technically animating smoothly. .1s instead
+     overlaps the fade with the card still on/near screen.
+     Written as longhand properties, not the transition shorthand — this
+     project's CSS build silently dropped the delay when written as
+     "opacity 0.2s ease 0.3s" in a shorthand list. */
+  transition-property: transform, opacity;
+  transition-duration: 0.5s, 0.2s;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1), ease;
+  transition-delay: 0s, 0.1s;
+
+  &.is-landscape {
+    inset-inline: 0;
+    top: 50%;
+    aspect-ratio: 4 / 3;
+    transform: translateY(-50%) rotate(var(--rot)) translate(var(--x), var(--y));
+  }
+  &:not(.is-landscape) {
+    inset-block: 0;
+    left: 50%;
+    aspect-ratio: 3 / 4;
+    transform: translateX(-50%) rotate(var(--rot)) translate(var(--x), var(--y));
+  }
+
+  &.is-top {
+    cursor: pointer;
+  }
+
+  &.is-exiting {
+    --x: var(--exit-x);
+    --y: var(--exit-y);
+    --rot: var(--exit-rot);
+    opacity: 0;
+  }
+}
+
+/* Guarantees a "before" value to transition from even when .is-exiting first
+   matches an element that never had a prior painted frame at rest — e.g. a
+   find whose sentinel crosses the exit threshold before it was ever rendered
+   as a stack card. Without this, the browser has no previous value for
+   --x/--y/--rot/opacity on first match and the card just snaps to its exited
+   pose instead of animating, no matter how the class/timing is orchestrated
+   in JS (this replaced an earlier JS-side lag-one-frame workaround that
+   turned out not to be reliable enough in practice). Must be top-level, not
+   nested inside .cal-photo-card.is-exiting — nested @starting-style was
+   silently dropped by this project's CSS build. */
+@starting-style {
+  .cal-photo-card.is-exiting {
+    --x: var(--rest-x);
+    --y: var(--rest-y);
+    --rot: var(--rest-rot);
+    opacity: 1;
+  }
+}
+
 /* Right-handed: photos left, labels middle, calendar right */
 [data-orientation="right-handed"] {
   .cal-grid-col { order: 3; }
