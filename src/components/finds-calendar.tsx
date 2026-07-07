@@ -167,7 +167,9 @@ function MonthLabel({ date, today }: { date: Date; today: Date }) {
   );
 }
 
-// px a sentinel must travel above viewport top before its card is fully gone
+// px a sentinel must travel above viewport top before its card is fully gone.
+// Used as an IntersectionObserver rootMargin (see the observer effect below),
+// not a getBoundingClientRect comparison.
 const EXIT_DISTANCE = 120;
 // Once exited, a sentinel must scroll back within this margin (a much smaller
 // distance) before its card re-enters — the gap between the two prevents flapping.
@@ -176,6 +178,52 @@ const REENTER_DISTANCE = 40;
 // Keeps computed pose values (px/deg) out of floating-point-noise territory
 // (e.g. 5.6000000000000005) without losing meaningful precision.
 function round2(n: number) { return Math.round(n * 100) / 100; }
+
+// Photo stack exit/re-entry animation is driven from JS via the Web Animations API
+// (element.animate(), see the effect below), not CSS transitions. CSS transitions on
+// @property-registered custom properties (--x/--y/--rot, needed to make `transform`
+// interpolate smoothly rather than snapping) toggled via class changes were found to be
+// unreliable — verified by sampling the actual interpolated computed value over real
+// time (not just checking that a transition/@starting-style *was configured*, which
+// looked fine via getAnimations() keyframes even when the value never actually moved).
+// WAAPI keyframes specify concrete start/end transform strings directly, sidestepping
+// custom-property/cascade timing entirely.
+const DESKTOP_ANIM_MS = 1000;
+const MOBILE_ANIM_MS = 2000;
+const DESKTOP_EXIT_DISTANCE = 0.5;
+const MOBILE_EXIT_DISTANCE = 1;
+
+// Stack cards: non-fully-exited. TOP_N visible + 1 invisible buffer that fades in.
+const TOP_N = 5;
+
+// Per-find resting and exit poses — same formulas as before (rotation/offset from
+// markerRotation, unchanged), just resolved to concrete `transform` strings instead of
+// CSS custom properties. exitDistanceMultiplier is the old --photo-exit-distance value
+// (mobile vs desktop). --x/--y equivalents are percentages of the card's own rendered
+// size (not pixels) so the exit distance scales with however large the card actually
+// is — a fixed px distance would cover wildly different fractions of the card depending
+// on viewport width (e.g. nearly instant on a narrow window).
+function computePose(findId: string, isLandscape: boolean, exitDistanceMultiplier: number) {
+  const rotation = round2(markerRotation(findId, 0) * 0.5);
+  const offsetX = round2(markerRotation(findId, 1) * 0.3);
+  const offsetY = round2(markerRotation(findId, 2) * 0.3);
+  const exitDx = round2(markerRotation(findId, 3) * 8);
+  const exitDy = round2(-(40 + Math.abs(markerRotation(findId, 4)) * 3));
+  const exitRot = round2(markerRotation(findId, 5) * 2);
+
+  const exitRotFinal = round2(rotation + exitRot);
+  const exitX = round2(offsetX + exitDx * exitDistanceMultiplier);
+  const exitY = round2(offsetY + exitDy * exitDistanceMultiplier);
+
+  const pose = (rot: number, x: number, y: number) => isLandscape
+    ? `translateY(-50%) rotate(${rot}deg) translate(${x}%, ${y}%)`
+    : `translateX(-50%) rotate(${rot}deg) translate(${x}%, ${y}%)`;
+
+  return {
+    restTransform: pose(rotation, offsetX, offsetY),
+    exitTransform: pose(exitRotFinal, exitX, exitY),
+  };
+}
 
 export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initialFindId, basePath = '', header }: Props) {
   const [exitedIds, setExitedIds] = useState<Set<string>>(new Set());
@@ -270,44 +318,247 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
     detectOrientation(e.currentTarget, findId);
   }, [detectOrientation]);
 
-  // Sentinel refs collected during render, observed once on mount.
-  // Sentinels live in the photo column (no overflow:hidden ancestors) so
-  // IntersectionObserver fires reliably in Safari.
+  // Sentinel refs collected during render; observed via IntersectionObserver once the
+  // observers exist (created in the effect below — registerSentinel can fire before
+  // that on initial mount, since ref callbacks run during commit, ahead of effects).
+  // <main> (an ancestor several levels up) uses overflow:clip, which IntersectionObserver
+  // does respect — a sentinel positioned outside main's own rendered bounds reads as
+  // "not intersecting" even while comfortably within the observer's rootMargin-expanded
+  // viewport bounds. Normal (in-range) sentinel positions never approach that boundary;
+  // the one sentinel that's deliberately placed out of bounds (see "neverExits" below)
+  // is excluded from observation entirely rather than relying on its position.
   const pendingSentinels = useRef<Map<string, HTMLElement>>(new Map());
+  const observersRef = useRef<{ exit: IntersectionObserver; reenter: IntersectionObserver } | null>(null);
 
   const registerSentinel = useCallback((el: HTMLElement | null, findId: string) => {
+    const prevEl = pendingSentinels.current.get(findId);
+    if (prevEl && prevEl !== el) {
+      observersRef.current?.exit.unobserve(prevEl);
+      observersRef.current?.reenter.unobserve(prevEl);
+    }
     if (el) {
       pendingSentinels.current.set(findId, el);
+      observersRef.current?.exit.observe(el);
+      observersRef.current?.reenter.observe(el);
     } else {
       pendingSentinels.current.delete(findId);
     }
   }, []);
 
+  // Two IntersectionObservers replace what used to be a scroll listener calling
+  // getBoundingClientRect() on every find's sentinel (not just visible ones) on every
+  // scroll event — an O(total finds) layout read per tick, and the main remaining
+  // source of scroll jank as the finds list grows. Once the exit animation moved to a
+  // boolean threshold + CSS transition (rather than a continuous scroll-scrubbed
+  // progress value), IntersectionObserver became a viable replacement: the browser
+  // computes intersection natively and batches callbacks off the scroll path, instead
+  // of forcing a synchronous read in JS on every tick.
+  //
+  // Hysteresis (exiting requires crossing -EXIT_DISTANCE, re-entering only requires
+  // scrolling back within -REENTER_DISTANCE) is reproduced with two observers at two
+  // different rootMargins rather than one. Without a gap between the two thresholds,
+  // scroll position settling near one exact pixel (e.g. momentum-scroll deceleration on
+  // mobile) would flap the class on/off every tick, restarting the transition before it
+  // could ever complete. A positive top rootMargin extends the observed area *above*
+  // the real viewport by that many px, so isIntersecting only flips false once a
+  // sentinel has scrolled that far past the top edge. The bottom margin is set huge so
+  // sentinels that simply haven't scrolled into view yet (below the viewport) never
+  // register as "not intersecting" and get mistaken for exited.
   useEffect(() => {
-    const update = () => {
+    const exitObserver = new IntersectionObserver(entries => {
       setExitedIds(prev => {
         let changed = false;
         const next = new Set(prev);
-        pendingSentinels.current.forEach((el, findId) => {
-          // Hysteresis: exiting requires crossing -EXIT_DISTANCE, but re-entering only
-          // requires scrolling back within REENTER_DISTANCE. Without a gap between the
-          // two thresholds, scroll position settling near one exact pixel (e.g. momentum
-          // scroll deceleration on mobile) would flap the class on/off every tick, so the
-          // transition kept restarting instead of ever completing.
-          const top = el.getBoundingClientRect().top;
-          const wasExited = prev.has(findId);
-          const exited = wasExited ? top < -REENTER_DISTANCE : top < -EXIT_DISTANCE;
-          if (exited && !wasExited) { next.add(findId); changed = true; }
-          else if (!exited && wasExited) { next.delete(findId); changed = true; }
-        });
+        for (const entry of entries) {
+          if (entry.isIntersecting) continue; // re-entry is the reenter observer's job, at a tighter margin
+          const findId = entry.target.getAttribute('data-find-id');
+          if (findId && !next.has(findId)) { next.add(findId); changed = true; }
+        }
         return changed ? next : prev;
+      });
+    }, { rootMargin: `${EXIT_DISTANCE}px 0px 100000px 0px` });
+
+    const reenterObserver = new IntersectionObserver(entries => {
+      setExitedIds(prev => {
+        let changed = false;
+        const next = new Set(prev);
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue; // exiting is the exit observer's job, at a wider margin
+          const findId = entry.target.getAttribute('data-find-id');
+          if (findId && next.has(findId)) { next.delete(findId); changed = true; }
+        }
+        return changed ? next : prev;
+      });
+    }, { rootMargin: `${REENTER_DISTANCE}px 0px 100000px 0px` });
+
+    observersRef.current = { exit: exitObserver, reenter: reenterObserver };
+    pendingSentinels.current.forEach(el => { exitObserver.observe(el); reenterObserver.observe(el); });
+
+    return () => {
+      exitObserver.disconnect();
+      reenterObserver.disconnect();
+      observersRef.current = null;
+    };
+  }, []);
+
+  // Card DOM elements, keyed by find id, for the Web Animations API-driven exit/
+  // re-entry effect below.
+  const cardElsRef = useRef<Map<string, HTMLElement>>(new Map());
+  const registerCardEl = useCallback((el: HTMLElement | null, findId: string) => {
+    if (el) cardElsRef.current.set(findId, el);
+    else cardElsRef.current.delete(findId);
+  }, []);
+  type CardAnimState = { isGhost: boolean; visible: boolean };
+  const prevAnimStateRef = useRef<Map<string, CardAnimState>>(new Map());
+  // Ids that have *ever* been a ghost, never removed — separate from prevAnimStateRef,
+  // which only tracks cards in the *current* combinedSlice and loses an entry entirely
+  // once a ghost ages out of the TOP_N ghost cap (ghostSlice keeps only the TOP_N most
+  // recently exited). When an even-newer ghost re-enters the stack, the next-oldest
+  // ghost can shift back *into* ghostSlice and appear to be mounting for the first time
+  // (prevAnimStateRef has no entry for it) — without this ref, that read as a genuine
+  // fresh exit and replayed the full peel-away animation for a card that actually left
+  // the stack a while ago. See the "!wasEverGhost" check below.
+  const everGhostIdsRef = useRef<Set<string>>(new Set());
+  // Bridges data this effect needs (combinedSlice, stackIdxMap, etc.) — computed later
+  // in the function, after the `finds.length === 0` early return below — into a hook
+  // that itself must be called unconditionally on every render, regardless of that
+  // early return. Written via a plain ref assignment during render (not a second
+  // useEffect) right after combinedSlice is computed; see that assignment for why.
+  type AnimInputs = {
+    combinedSlice: (Find & { clovers: Clover[] })[];
+    exitedIds: Set<string>;
+    colCount: number;
+    orientations: Record<string, 'landscape' | 'portrait'>;
+    selectedFindId: string | undefined;
+    stackIdxMap: Map<string, number>;
+    stackSliceLength: number;
+  };
+  const animInputsRef = useRef<AnimInputs | null>(null);
+
+  // Drives the exit/re-entry animation via the Web Animations API (see the
+  // computePose/DESKTOP_ANIM_MS comment near round2 for why CSS transitions were
+  // dropped). Runs after every render (no dependency array — the state space spans
+  // exitedIds, stack membership/position, orientation, and dialog state; re-deriving a
+  // precise dep list would just duplicate the logic already in animInputsRef's
+  // assignment) and is idempotent per card: it compares this render's isGhost/visible
+  // against prevAnimStateRef's last-seen values and only calls .animate() when
+  // something actually changed for that specific card.
+  useEffect(() => {
+    const inputs = animInputsRef.current;
+    if (!inputs) return; // finds.length === 0 this render — nothing to animate
+    const { combinedSlice, exitedIds, colCount, orientations, selectedFindId, stackIdxMap, stackSliceLength } = inputs;
+
+    const isMobile = colCount === 1;
+    const animMs = isMobile ? MOBILE_ANIM_MS : DESKTOP_ANIM_MS;
+    const exitDistance = isMobile ? MOBILE_EXIT_DISTANCE : DESKTOP_EXIT_DISTANCE;
+    const prevStates = prevAnimStateRef.current;
+    const nextStates = new Map<string, CardAnimState>();
+
+    const runAnimation = (el: HTMLElement, keyframesList: Keyframe[][], durations: number[], easings: string[]) => {
+      el.getAnimations().forEach(a => a.cancel());
+      el.style.willChange = 'transform, opacity';
+      let pending = keyframesList.length;
+      keyframesList.forEach((keyframes, i) => {
+        const anim = el.animate(keyframes, { duration: durations[i], easing: easings[i], fill: 'forwards' });
+        anim.onfinish = () => {
+          anim.cancel(); // release the forwards-fill hold; the render-time static style already matches
+          pending--;
+          if (pending <= 0) el.style.willChange = '';
+        };
       });
     };
 
-    window.addEventListener('scroll', update, { passive: true });
-    update();
-    return () => window.removeEventListener('scroll', update);
-  }, []);
+    for (const find of combinedSlice) {
+      const el = cardElsRef.current.get(find.id);
+      if (!el) continue;
+
+      const isGhost = exitedIds.has(find.id);
+      const isDialogOpen = selectedFindId === find.id;
+      const stackIdx = stackIdxMap.get(find.id);
+      const posFromTop = stackIdx !== undefined ? stackSliceLength - 1 - stackIdx : -1;
+      // Ghosts are always logically "in flight" (visible until their own exit fade
+      // finishes) — visible here only distinguishes the stack-card hide cases
+      // (dialog open, buffer slot) from normal display.
+      const visible = isGhost ? true : !(isDialogOpen || posFromTop >= TOP_N);
+
+      const isLandscape = (orientations[find.id] ?? 'portrait') === 'landscape';
+      const { restTransform, exitTransform } = computePose(find.id, isLandscape, exitDistance);
+
+      const prev = prevStates.get(find.id);
+      const wasEverGhost = everGhostIdsRef.current.has(find.id);
+      nextStates.set(find.id, { isGhost, visible });
+      if (isGhost) everGhostIdsRef.current.add(find.id);
+
+      if (isDialogOpen) {
+        el.getAnimations().forEach(a => a.cancel());
+        continue;
+      }
+
+      if (!prev) {
+        // First-ever paint for this card *in the current render tree* — but that's not
+        // the same as "just now exited": a ghost that ages out of the TOP_N ghost cap
+        // (ghostSlice keeps only the most recently exited) can shift back into view
+        // when a newer ghost re-enters the stack, freeing a slot. wasEverGhost
+        // distinguishes that "revealed a card that's been sitting exited for a while"
+        // case (already at its exit pose — nothing to animate) from a genuinely new
+        // card mounting directly into the exited state (e.g. a multi-exit scroll burst
+        // skipping past a card that was never rendered at rest — still animate its
+        // departure rather than snapping straight to the exit pose).
+        if (isGhost && !wasEverGhost) {
+          runAnimation(el,
+            [
+              [{ transform: restTransform }, { transform: exitTransform }],
+              [{ opacity: 1 }, { opacity: 1, offset: 0.4 }, { opacity: 0 }],
+            ],
+            [animMs, animMs], ['ease-in-out', 'ease-in']);
+        } else if (!isGhost && visible) {
+          // Genuinely new card (e.g. entering the bottom buffer slot for the first
+          // time) — fade in only, no position slide: it was never anywhere else on
+          // screen for a slide to make sense.
+          runAnimation(el, [[{ opacity: 0 }, { opacity: 1 }]], [animMs * 0.6], ['ease-out']);
+        }
+        continue;
+      }
+
+      if (isGhost && !prev.isGhost) {
+        // Exiting — peel off the stack. Opacity fades over a fraction of the move with
+        // no delay: transform's easing is heavily front-loaded, so a delay put the fade
+        // increasingly late relative to the motion (previously landed after the card
+        // had already flown off-screen). No delay also matters on multi-exit bursts:
+        // several ghosts exiting at once, all rendered above the stack, each staying
+        // near-opaque and near its original position for its first ~100ms reads as
+        // "the stack disappeared" — fading immediately shortens that window.
+        runAnimation(el,
+          [
+            [{ transform: restTransform }, { transform: exitTransform }],
+            [{ opacity: 1 }, { opacity: 1, offset: 0.4 }, { opacity: 0 }],
+          ],
+          [animMs, animMs], ['ease-in-out', 'ease-in']);
+      } else if (!isGhost && prev.isGhost) {
+        // Re-entering — land back onto the stack. Deliberately different timing from
+        // exiting: opacity leads with no delay and transform decelerates in, so
+        // scrolling back up reads as the card arriving, not the exit motion in reverse.
+        runAnimation(el,
+          [
+            [{ transform: exitTransform }, { transform: restTransform }],
+            [{ opacity: 0 }, { opacity: 1 }],
+          ],
+          [animMs, animMs * 0.6], ['ease-out', 'ease-out']);
+      } else if (!isGhost && visible && !prev.visible) {
+        // Buffer slot revealed or dialog closed — fade only, no slide.
+        runAnimation(el, [[{ opacity: 0 }, { opacity: 1 }]], [animMs * 0.6], ['ease-out']);
+      } else if (!isGhost && !visible && prev.visible) {
+        // A stack card pushed into the invisible buffer slot — e.g. a re-entry above it
+        // added a card to the stack, shifting every other visible card's posFromTop down
+        // by one, so the previously-last-visible card now falls past TOP_N. It's not
+        // "removed" (still mounted, same as the ghost-cap case above), just newly
+        // hidden — fade out only, no slide, mirroring the fade-in case.
+        runAnimation(el, [[{ opacity: 1 }, { opacity: 0 }]], [animMs * 0.6], ['ease-out']);
+      }
+    }
+
+    prevAnimStateRef.current = nextStates;
+  });
 
   // Open dialog from URL on mount (direct link or initial URL).
   useEffect(() => {
@@ -380,7 +631,7 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
     if (origMetaRef.current) applyPageMeta(origMetaRef.current);
   }, []);
 
-  if (finds.length === 0) return null;
+  if (finds.length === 0) { animInputsRef.current = null; return null; }
 
   const today = new Date();
 
@@ -585,22 +836,25 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
         approxColH > 0
           ? (idx + 1) * usableH / (N * approxColH)
           : (idx + 1) / N;
-      return { find, fraction };
+      // The oldest find's sentinel is deliberately placed beyond the column so raw
+      // scroll position never crosses it — with IntersectionObserver, that position
+      // instead gets clipped out by the <main> ancestor's overflow:clip, which reads
+      // as "not intersecting" and would wrongly mark it exited from the very first
+      // render. Excluded from observation entirely below (see registerSentinel call
+      // site) rather than relying on its position, so it truly never exits.
+      return { find, fraction, neverExits: isLast };
     }
     const row = findReversedRows[idx];
     const displayRow = displayRowOf.get(row) ?? row;
     const group = rowGroups.get(row)!;
     const posInRow = group.indexOf(idx);
     const totalInRow = group.length;
-    return { find, fraction: (displayRow + posInRow / totalInRow) / displayTotalRows };
+    return { find, fraction: (displayRow + posInRow / totalInRow) / displayTotalRows, neverExits: false };
   });
-
-  const TOP_N = 5;
 
   // Oldest-first (newest renders on top).
   const oldestFirst = [...sortedFinds].reverse();
 
-  // Stack cards: non-fully-exited. TOP_N visible + 1 invisible buffer that fades in.
   const stackFinds = oldestFirst.filter(f => !exitedIds.has(f.id));
   const stackSlice = stackFinds.slice(-(TOP_N + 1));
   const stackIdxMap = new Map(stackSlice.map((f, i) => [f.id, i]));
@@ -628,6 +882,11 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
   const ghostIdxMap = new Map(ghostSlice.map((f, i) => [f.id, i]));
 
   const combinedSlice = [...ghostSlice, ...stackSlice];
+
+  // Feeds the WAAPI-driven exit/re-entry effect declared above the early return (hooks
+  // must run unconditionally, but this data only exists once we're past it) — see that
+  // effect for why this is a ref write during render rather than a second useEffect.
+  animInputsRef.current = { combinedSlice, exitedIds, colCount, orientations, selectedFindId: selectedFind?.id, stackIdxMap, stackSliceLength: stackSlice.length };
 
   // Left-column label sections in display order. Hidden runs collapse away; a
   // spacer section per run keeps the column aligned with each grid button.
@@ -839,9 +1098,9 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
 
       {/*
         Photo column. Contains:
-        1. Zero-height sentinel divs at computed fractional positions.
-           Sentinels have no overflow:hidden ancestors, so IntersectionObserver
-           fires correctly in Safari.
+        1. Zero-height sentinel divs at computed fractional positions (see the
+           IntersectionObserver setup near registerSentinel for how exit/re-entry
+           is detected, and the overflow:clip caveat on <main> that applies to it).
         2. A single sticky photo stack that shows only the finds whose sentinels
            haven't yet exited the top of the viewport.
 
@@ -854,10 +1113,10 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
       */}
       <div className="cal-photo-col relative">
         {header && <div className="cal-photo-header">{header}</div>}
-        {findSentinelData.map(({ find, fraction }) => (
+        {findSentinelData.map(({ find, fraction, neverExits }) => (
           <div
             key={`sentinel-${find.id}`}
-            ref={el => registerSentinel(el as HTMLElement | null, find.id)}
+            ref={neverExits ? undefined : el => registerSentinel(el as HTMLElement | null, find.id)}
             data-find-id={find.id}
             className="absolute inset-x-0 h-0 pointer-events-none"
             style={{ top: `${fraction * 100}%` }}
@@ -870,31 +1129,20 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
             {combinedSlice.map((find) => {
               const isGhost = exitedIds.has(find.id);
               const isLandscape = (orientations[find.id] ?? 'portrait') === 'landscape';
-              const rotation = round2(markerRotation(find.id, 0) * 0.5);
-              const offsetX = round2(markerRotation(find.id, 1) * 0.4);
-              const offsetY = round2(markerRotation(find.id, 2) * 0.4);
-              const exitX = round2(markerRotation(find.id, 3) * 20);
-              const exitY = round2(-(150 + Math.abs(markerRotation(find.id, 4)) * 8));
-              const exitRot = round2(markerRotation(find.id, 5) * 2);
-              // Resting and exit poses live as CSS custom properties (see .cal-photo-card
-              // in globals.css) — toggling the is-exiting class lets CSS transition
-              // between them, instead of recomputing the transform on every scroll event.
-              const poseVars = {
-                '--rest-rot': `${rotation}deg`,
-                '--rest-x': `${offsetX}px`,
-                '--rest-y': `${offsetY}px`,
-                '--exit-rot': `${round2(rotation + exitRot)}deg`,
-                '--exit-x': `${round2(offsetX + exitX)}px`,
-                '--exit-y': `${round2(offsetY + exitY)}px`,
-              } as React.CSSProperties;
+              // Static (non-animating) target pose — matches whatever the WAAPI-driven
+              // effect above settles on once its transition finishes, so there's no
+              // visual jump between "mid-animation" and "at rest" render states.
+              const exitDistance = colCount === 1 ? MOBILE_EXIT_DISTANCE : DESKTOP_EXIT_DISTANCE;
+              const { restTransform, exitTransform } = computePose(find.id, isLandscape, exitDistance);
 
               if (isGhost) {
                 const ghostIdx = ghostIdxMap.get(find.id) ?? 0;
                 return (
                   <div
                     key={find.id}
-                    className={`cal-photo-card is-exiting${isLandscape ? ' is-landscape' : ''}`}
-                    style={{ zIndex: GHOST_Z_BASE + ghostIdx, pointerEvents: 'none', ...poseVars }}
+                    ref={el => registerCardEl(el as HTMLElement | null, find.id)}
+                    className={`cal-photo-card${isLandscape ? ' is-landscape' : ''}`}
+                    style={{ zIndex: GHOST_Z_BASE + ghostIdx, pointerEvents: 'none', transform: exitTransform, opacity: 0 }}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={find.photo_url} alt="" className="w-full h-full object-cover block" />
@@ -912,12 +1160,13 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
               const isDialogOpen = selectedFind?.id === find.id;
               const cardStyle = {
                 zIndex: stackIdx + 1,
-                ...poseVars,
-                ...(isDialogOpen ? { opacity: 0, transition: 'none' } : posFromTop >= TOP_N ? { opacity: 0 } : {}),
+                transform: restTransform,
+                opacity: (isDialogOpen || posFromTop >= TOP_N) ? 0 : 1,
               };
               return (
                 <div
                   key={find.id}
+                  ref={el => registerCardEl(el as HTMLElement | null, find.id)}
                   className={cardClass}
                   style={cardStyle}
                   onClick={isTop ? e => openFind(find, e.currentTarget as HTMLElement) : undefined}
