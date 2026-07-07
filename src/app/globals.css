@@ -402,6 +402,25 @@ body {
   }
 }
 
+/* Separate, non-nested rule — this project's CSS build (Tailwind v4/Lightning CSS) was
+   found to silently drop `will-change` when it was a declaration inside the nested
+   .cal-photo-card block above (alongside the &.is-landscape etc. sub-rules); moved out
+   to its own flat rule the same way this file's other build-dropping quirks (nested
+   @starting-style, shorthand transition-delay) were worked around elsewhere.
+   Persistent, not toggled on/off around each animation (an earlier version only set
+   this via JS while a WAAPI animation was actively running, clearing it on finish — see
+   finds-calendar.tsx history). position:absolute + overflow:hidden + border-radius
+   nested inside a position:sticky ancestor (.cal-photo-col's sticky column) is a known
+   trigger for iOS Safari losing track of an element's compositor layer during scroll and
+   flashing it invisible — toggling will-change on/off recreates exactly the layer-
+   promotion churn that bug depends on. At most 11 cards are ever rendered at once
+   (TOP_N+1 stack + TOP_N ghosts), so keeping all of them permanently promoted is cheap
+   enough not to worry about the usual "don't overuse will-change" advice, which is aimed
+   at unbounded element counts. */
+.cal-photo-card {
+  will-change: transform, opacity;
+}
+
 /* Right-handed: photos left, labels middle, calendar right */
 [data-orientation="right-handed"] {
   .cal-grid-col { order: 3; }

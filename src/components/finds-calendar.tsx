@@ -454,17 +454,16 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
     const prevStates = prevAnimStateRef.current;
     const nextStates = new Map<string, CardAnimState>();
 
+    // will-change is a persistent, static CSS declaration on .cal-photo-card (see
+    // globals.css) rather than toggled here per-animation — an iOS Safari layer-
+    // promotion quirk needs the compositor layer to stay stable throughout, not
+    // repeatedly created and torn down.
     const runAnimation = (el: HTMLElement, keyframesList: Keyframe[][], durations: number[], easings: string[]) => {
       el.getAnimations().forEach(a => a.cancel());
-      el.style.willChange = 'transform, opacity';
-      let pending = keyframesList.length;
       keyframesList.forEach((keyframes, i) => {
         const anim = el.animate(keyframes, { duration: durations[i], easing: easings[i], fill: 'forwards' });
-        anim.onfinish = () => {
-          anim.cancel(); // release the forwards-fill hold; the render-time static style already matches
-          pending--;
-          if (pending <= 0) el.style.willChange = '';
-        };
+        // Release the forwards-fill hold once finished; the render-time static style already matches.
+        anim.onfinish = () => anim.cancel();
       });
     };
 
