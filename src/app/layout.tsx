@@ -26,6 +26,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
   title: "Fourag",
   description: "Fourag is a public patch for spreading the serendipity of four-leaf (or even more-leaf) clovers.",
 };

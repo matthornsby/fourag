@@ -66,6 +66,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     openGraph: {
       title,
       description,
+      images: [{ url: find.photo_url }],
     },
   };
 }

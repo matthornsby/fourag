@@ -119,6 +119,32 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     ? new Date(earliestFind).toLocaleDateString('en-US', { month: 'long', ...(hasPreviousYear ? { year: 'numeric' } : {}) })
     : null;
 
+  const displayName = typedProfile.username.charAt(0).toUpperCase() + typedProfile.username.slice(1);
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+  const profileImage = typedProfile.avatar_url ?? typedFinds[0]?.photo_url;
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'ProfilePage',
+    dateCreated: typedProfile.created_at,
+    dateModified: typedFinds[0]?.found_at ?? typedProfile.created_at,
+    mainEntity: {
+      '@type': 'Person',
+      name: displayName,
+      alternateName: typedProfile.username,
+      identifier: typedProfile.username,
+      url: `${siteUrl}/${typedProfile.username.toLowerCase()}`,
+      ...(profileImage ? { image: profileImage } : {}),
+      ...(typedProfile.bio ? { description: typedProfile.bio } : {}),
+      ...(totalClovers > 0 ? {
+        interactionStatistic: {
+          '@type': 'InteractionCounter',
+          interactionType: 'https://schema.org/WriteAction',
+          userInteractionCount: totalClovers,
+        },
+      } : {}),
+    },
+  };
+
   const profileHeader = (
     <div className="flex flex-col gap-3 px-5 sm:px-7 py-6 items-center">
       <UserAvatar username={typedProfile.username} avatarUrl={typedProfile.avatar_url} />
@@ -171,6 +197,10 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
 
   return (
     <main className="flex-1" style={{ overflowY: 'clip' }}>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }}
+      />
       <div className="mx-auto max-w-(--width-main-max) px-4 sm:px-6 py-8 flex flex-col gap-6">
         {typedFinds.length === 0 ? (
           <>
