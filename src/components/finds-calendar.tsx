@@ -887,30 +887,30 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
   // effect for why this is a ref write during render rather than a second useEffect.
   animInputsRef.current = { combinedSlice, exitedIds, colCount, orientations, selectedFindId: selectedFind?.id, stackIdxMap, stackSliceLength: stackSlice.length };
 
-  // Left-column label sections in display order. Hidden runs collapse away; a
-  // spacer section per run keeps the column aligned with each grid button.
-  // Grouping visible rows by month (rather than re-deriving emptiness) keeps the
-  // two columns aligned even at week-rows shared by an empty and a non-empty month.
-  type LabelSection = { key: string; date: Date | null; rows: number };
+  // Month label sections in display order: each visible month's contiguous display-row
+  // range. Rendered as grid items spanning `rows` rows starting at `startRow` (see the
+  // grid below), so they align to the day rows' actual height — mobile vs desktop,
+  // whatever that resolves to — instead of a JS-measured pixel height. Hidden (collapsed)
+  // runs simply have no label rendered for that range; no spacer bookkeeping needed since
+  // grid-row placement is absolute, not sequential like the old flex-height column was.
+  type LabelSection = { key: string; date: Date; startRow: number; rows: number };
   const labelSections: LabelSection[] = [];
   {
     let currentMi = -1;
+    let sectionStartRow = -1;
     let currentRows = 0;
     const flush = () => {
       if (currentRows > 0) {
         const { date } = monthLabelData[currentMi];
-        labelSections.push({ key: `${date.getFullYear()}-${date.getMonth()}`, date, rows: currentRows });
+        labelSections.push({ key: `${date.getFullYear()}-${date.getMonth()}`, date, startRow: sectionStartRow, rows: currentRows });
       }
       currentRows = 0;
     };
     for (let r = 0; r < totalRows; r++) {
-      if (isHidden(r) && isPeriodStart(r)) {
-        flush();
-        labelSections.push({ key: `reveal-spacer-${r}`, date: null, rows: BUTTON_ROWS });
-      }
-      if (!displayRowOf.has(r)) continue;
+      const dr = displayRowOf.get(r);
+      if (dr === undefined) continue;
       const mi = rowMonthIndex[r];
-      if (mi !== currentMi) { flush(); currentMi = mi; }
+      if (mi !== currentMi) { flush(); currentMi = mi; sectionStartRow = dr; }
       currentRows++;
     }
     flush();
@@ -919,30 +919,6 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
   return (
     <>
     <div className="flex gap-0" style={viewportH > 0 ? { minHeight: viewportH * 1.5 } : undefined}>
-      {/* Month label column — separate from grid so sticky works via flex-height sections */}
-      <div className="cal-month-col">
-          {colCount > 1 && dowRowHeightPx > 0 && (
-            <div style={{ height: dowRowHeightPx + rowGapPx, flexShrink: 0 }} />
-          )}
-          {labelSections.map(({ key, date, rows }, idx) => {
-            // Pixel-exact height: rows × (cellH + gap), minus one gap on the last section.
-            const rowH = cellHeightPx + rowGapPx;
-            const isLast = idx === labelSections.length - 1;
-            const exactH = cellHeightPx > 0 ? rows * rowH - (isLast ? rowGapPx : 0) : undefined;
-            return (
-              <div
-                key={key}
-                style={exactH !== undefined ? { height: exactH, flexShrink: 0 } : { flex: rows }}
-              >
-                {date && (
-                  <div className="cal-month-label">
-                    <MonthLabel date={date} today={today} />
-                  </div>
-                )}
-              </div>
-            );
-          })}
-      </div>
       {/* Calendar grid */}
       <div className="cal-grid-col">
       <div
@@ -954,6 +930,21 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
           gap: 'var(--cal-gap)',
         } as React.CSSProperties}
       >
+        {/* Month label pass — spans grid rows directly (see labelSections above), so
+            each label's height and position falls out of the same row tracks the day
+            cells use, rather than a separately-measured pixel height. */}
+        {labelSections.map(({ key, date, startRow, rows }) => (
+          <div
+            key={key}
+            className="cal-month-label-cell"
+            style={{ gridRow: `${startRow + 2} / span ${rows}` }}
+          >
+            <div className="cal-month-label">
+              <MonthLabel date={date} today={today} />
+            </div>
+          </div>
+        ))}
+
         {/* Day-of-week header row — row 1, only in 7-column layout */}
         {colCount > 1 && (() => {
           const ALL_ABBR = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
@@ -983,10 +974,9 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
           return (
             <div
               key={`circle-${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`}
-              className={colCount > 1 ? `day-num-${colIndex} pointer-events-none cal-find-circle` : 'pointer-events-none cal-find-circle'}
+              className={`day-num-${colIndex} pointer-events-none cal-find-circle`}
               style={{
                 gridRowStart: displayRow + 2,
-                ...(colCount === 1 && { gridColumn: 1 }),
                 width: '100%',
                 height: 0,
                 alignSelf: 'center',
@@ -1068,9 +1058,7 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
               className="cal-reveal-row"
               style={{
                 gridRow: `${displayRow + 2} / span ${BUTTON_ROWS}`,
-                gridColumn: colCount > 1 ? '1 / -1' : 1,
                 '--button-rows': BUTTON_ROWS,
-                ...(cellHeightPx ? { '--cell-h': `${cellHeightPx}px` } : {}),
               } as React.CSSProperties}
             >
               <button
@@ -1083,7 +1071,7 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
                 </svg>
                 <span className="cal-reveal-text">
                   <span className="cal-reveal-label">{SHOW_EMPTY_MONTHS}</span>
-                  {range && <span className="cal-reveal-range">{formatHiddenRange(range.min, range.max)}</span>}
+                  {range && <span className="cal-reveal-range">{formatHiddenRange(range.max, range.min)}</span>}
                 </span>
                 <svg className="cal-wave cal-wave-bottom" viewBox="0 0 12 48" preserveAspectRatio="none" aria-hidden="true">
                   <path d={REVEAL_WAVE_PATH} fill="none" stroke="currentColor" strokeWidth={2} vectorEffect="non-scaling-stroke" />
