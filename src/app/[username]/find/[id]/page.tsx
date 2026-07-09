@@ -39,7 +39,10 @@ function timeOfDay(dateStr: string) {
 }
 
 function formatDate(dateStr: string) {
-  return new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' }).format(new Date(dateStr));
+  const d = new Date(dateStr);
+  const opts: Intl.DateTimeFormatOptions = { month: 'long', day: 'numeric' };
+  if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+  return new Intl.DateTimeFormat('en-US', opts).format(d);
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
@@ -118,7 +121,12 @@ export default async function UserFindPage({ params }: PageProps) {
   const luckEndDate = computeLuckEndDate(typedFinds);
   const luckExpired = luckEndDate ? new Date(luckEndDate) < new Date() : false;
   const luckDateStr = luckEndDate
-    ? new Date(luckEndDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
+    ? (() => {
+        const d = new Date(luckEndDate);
+        const opts: Intl.DateTimeFormatOptions = { month: 'long', day: 'numeric' };
+        if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+        return d.toLocaleDateString('en-US', opts);
+      })()
     : null;
 
   const bestCloverFind = typedFinds.reduce<{ leafCount: number; foundAt: string } | null>(

@@ -145,7 +145,12 @@ export function FindForm({ find, isAuthenticated = true, updateAction, returnTo 
   function buildFindFormData() {
     const formData = new FormData()
     if (photoFile) formData.append('photoFile', photoFile)
-    formData.append('found_at', foundAt)
+    // Convert while `foundAt`'s local wall-clock fields still mean "the browser's
+    // timezone" — the only place that's true. A naive "YYYY-MM-DDTHH:MM" string
+    // sent as-is would get re-parsed by `new Date()` server-side using the
+    // server process's own timezone (UTC in production), silently shifting the
+    // stored instant by whatever the uploader's UTC offset happens to be.
+    formData.append('found_at', new Date(foundAt).toISOString())
     if (lat) formData.append('lat', lat)
     if (lng) formData.append('lng', lng)
     if (locationName) formData.append('location_name', locationName)

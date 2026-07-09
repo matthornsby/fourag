@@ -31,7 +31,10 @@ function dominantLeafCount(finds: (Find & { clovers: Clover[] })[], date: Date):
 }
 
 function formatLuckDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
+  const d = new Date(dateStr)
+  const opts: Intl.DateTimeFormatOptions = { month: 'long', day: 'numeric' }
+  if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric'
+  return d.toLocaleDateString('en-US', opts)
 }
 
 export function UserProfileCard({ profile, finds, luckEndDate, weekStart = 1, isOwner = false }: Props) {

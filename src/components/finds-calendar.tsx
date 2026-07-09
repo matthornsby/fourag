@@ -36,7 +36,10 @@ function findTimeOfDay(dateStr: string) {
   return 'night';
 }
 function findFormatDate(dateStr: string) {
-  return new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' }).format(new Date(dateStr));
+  const d = new Date(dateStr);
+  const opts: Intl.DateTimeFormatOptions = { month: 'long', day: 'numeric' };
+  if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+  return new Intl.DateTimeFormat('en-US', opts).format(d);
 }
 
 // A vertical sine wave as a quadratic-bezier path — oscillates in x as it runs

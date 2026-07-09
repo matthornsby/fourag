@@ -71,27 +71,21 @@ export function luckAddedToCircleDiameterPct(luckAdded: number): number {
 
 export function computeLuckEndDate(finds: (Find & { clovers: Clover[] })[]): string | null {
   if (finds.length === 0) return null;
-  const now = new Date();
-  now.setHours(23, 59, 59, 0);
 
-  if (computeLuck(finds, now) >= 1) {
-    const cursor = new Date(now);
-    for (let i = 0; i < 365; i++) {
-      cursor.setDate(cursor.getDate() + 1);
-      if (computeLuck(finds, cursor) < 1) {
-        cursor.setDate(cursor.getDate() - 1);
-        return cursor.toISOString();
-      }
-    }
-    return null;
-  } else {
-    const cursor = new Date(now);
-    for (let i = 0; i < 365; i++) {
-      cursor.setDate(cursor.getDate() - 1);
-      if (computeLuck(finds, cursor) >= 1) {
-        return cursor.toISOString();
-      }
-    }
-    return null;
-  }
+  const lastFindTime = finds.reduce(
+    (max, f) => Math.max(max, new Date(f.found_at).getTime()),
+    -Infinity
+  );
+
+  // Pool value at the moment of the last find (its peak, before any further decay).
+  const poolAtLastFind = computeLuck(finds, new Date(lastFindTime));
+  if (poolAtLastFind < 1) return null;
+
+  // After the last find the pool only decays, linearly, so the day it drops
+  // below 1 can be solved directly instead of walking forward/backward day
+  // by day — a walk needs an arbitrary cap, and long-lived accounts can
+  // accumulate enough pooled luck that the decay takes well over a year.
+  const daysUntilBelowOne = (poolAtLastFind - 1) / LUCK_DECAY_RATE;
+  const endTime = lastFindTime + daysUntilBelowOne * 86400000;
+  return new Date(endTime).toISOString();
 }

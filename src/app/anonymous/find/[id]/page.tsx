@@ -37,7 +37,10 @@ function timeOfDay(dateStr: string) {
   return 'night';
 }
 function formatDate(dateStr: string) {
-  return new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' }).format(new Date(dateStr));
+  const d = new Date(dateStr);
+  const opts: Intl.DateTimeFormatOptions = { month: 'long', day: 'numeric' };
+  if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+  return new Intl.DateTimeFormat('en-US', opts).format(d);
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {

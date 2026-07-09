@@ -86,7 +86,12 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     ? `${typedProfile.username}’`
     : `${typedProfile.username}’s`;
   const luckDateStr = luckEndDate
-    ? new Date(luckEndDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
+    ? (() => {
+        const d = new Date(luckEndDate);
+        const opts: Intl.DateTimeFormatOptions = { month: 'long', day: 'numeric' };
+        if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+        return d.toLocaleDateString('en-US', opts);
+      })()
     : null;
 
   const bestCloverFind = typedFinds.reduce<{ leafCount: number; foundAt: string } | null>(

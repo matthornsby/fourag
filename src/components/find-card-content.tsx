@@ -51,7 +51,10 @@ function timeOfDay(dateString: string): string {
 }
 
 function formatNarrativeDate(dateString: string): string {
-  return new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' }).format(new Date(dateString));
+  const d = new Date(dateString);
+  const opts: Intl.DateTimeFormatOptions = { month: 'long', day: 'numeric' };
+  if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+  return new Intl.DateTimeFormat('en-US', opts).format(d);
 }
 
 function luckNarrative(find: Find & { clovers: Clover[] }): string {
