@@ -1113,7 +1113,11 @@ export function FindsCalendar({ finds, weekStartsOn = 1, userId, username, initi
           />
         ))}
 
-        <div className="sticky top-0 h-screen flex items-start py-4">
+        {/* dvh (not h-screen/100vh) so this column's height tracks the *current* viewport
+            as mobile Safari's chrome collapses/expands on scroll — a static vh reference
+            here drifted out of sync with #wallpaper's own dvh-based sticky math on long
+            (profile) pages, reopening the bottom-bleed gap after scrolling. */}
+        <div className="sticky top-0 h-[100dvh] flex items-start py-4">
           {/* Square container: portrait fills height (3/4 wide), landscape fills width (3/4 tall) — equal area, no crop */}
           <div className="cal-photo-frame relative w-full aspect-square shrink-0">
             {combinedSlice.map((find) => {
