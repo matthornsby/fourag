@@ -141,7 +141,11 @@ body {
   top: 0;
   left: 0;
   width: 100lvw;
-  height: 100lvh;
+  /* dvh (not lvh) so this fixed full-bleed layer always matches the *current*
+     visible viewport as mobile Safari's chrome expands/collapses — lvh is a
+     static "chrome fully collapsed" reference, which left a gap on initial
+     load (chrome expanded) and let content crop after scrolling collapsed it. */
+  height: 100dvh;
   z-index: -1;
   pointer-events: none;
 
@@ -159,7 +163,7 @@ body {
   background-repeat: no-repeat, no-repeat;
   background-position:
     calc(var(--wallpaper-gradient-1-size) * -.5) calc(var(--wallpaper-gradient-1-size) * -.6),
-    calc(100lvw - (var(--wallpaper-gradient-2-size) * .6)) calc(100lvh - (var(--wallpaper-gradient-2-size) * .4));
+    calc(100lvw - (var(--wallpaper-gradient-2-size) * .6)) calc(100dvh - (var(--wallpaper-gradient-2-size) * .4));
 }
 
 /* ─── Safe-area handling (notch / rounded corners, mainly landscape) ─────────
