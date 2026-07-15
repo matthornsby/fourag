@@ -6,16 +6,18 @@ import exifr from 'exifr'
 import { CloverMarker } from './clover-marker'
 import { markerRotation } from '@/lib/marker-rotation'
 
-// Returns the image content area as fractions [0,1] of a square container.
-// The container is always 1:1; the image is letterboxed inside it.
-function contentArea(naturalRatio: number) {
-  if (naturalRatio >= 1) {
-    // Landscape: full width, bars top/bottom
-    const h = 1 / naturalRatio
+// Returns the image content area as fractions [0,1] of the container box,
+// accounting for letterbox bars from object-contain when the container's
+// aspect ratio doesn't match the image's natural aspect ratio.
+function contentArea(naturalRatio: number, containerRatio: number) {
+  const rel = naturalRatio / containerRatio
+  if (rel >= 1) {
+    // Image relatively wider than container: full width, bars top/bottom
+    const h = 1 / rel
     return { left: 0, top: (1 - h) / 2, width: 1, height: h }
   } else {
-    // Portrait: full height, bars left/right
-    const w = naturalRatio
+    // Image relatively taller than container: full height, bars left/right
+    const w = rel
     return { left: (1 - w) / 2, top: 0, width: w, height: 1 }
   }
 }
@@ -102,8 +104,25 @@ export function PhotoUpload({
   const activePointerIdRef = useRef<number | null>(null)
   // Natural aspect ratio of the loaded image; drives letterbox offset calculations.
   const [naturalRatio, setNaturalRatio] = useState<number | null>(null)
+  // Live aspect ratio of the rendered frame — square on larger screens, intrinsic
+  // (matching the photo) on small screens. Tracked via ResizeObserver so marker
+  // math stays correct as the frame's shape changes across the sm breakpoint.
+  const [containerRatio, setContainerRatio] = useState(1)
 
   useEffect(() => { latestAnnotationsRef.current = annotations }, [annotations])
+
+  useEffect(() => {
+    const el = imgRef.current
+    if (!el) return
+    const update = () => {
+      const rect = el.getBoundingClientRect()
+      if (rect.width > 0 && rect.height > 0) setContainerRatio(rect.width / rect.height)
+    }
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [preview])
 
   function getRadiusFromPointer(clientX: number, clientY: number, index: number): number {
     const ann = latestAnnotationsRef.current[index]
@@ -111,8 +130,8 @@ export function PhotoUpload({
     if (!ann || !el) return 0.09
     const rect = el.getBoundingClientRect()
     const ratio = naturalRatio ?? (el.naturalWidth > 0 ? el.naturalWidth / el.naturalHeight : null)
-    if (!ratio) return 0.09
-    const ca = contentArea(ratio)
+    if (!ratio || rect.height === 0) return 0.09
+    const ca = contentArea(ratio, rect.width / rect.height)
     const contentW = ca.width * rect.width
     if (contentW === 0) return 0.09
     const markerCX = rect.left + (ca.left + ann.x * ca.width) * rect.width
@@ -127,8 +146,8 @@ export function PhotoUpload({
     if (!ann || !el) return 0
     const rect = el.getBoundingClientRect()
     const ratio = naturalRatio ?? (el.naturalWidth > 0 ? el.naturalWidth / el.naturalHeight : null)
-    if (!ratio) return 0
-    const ca = contentArea(ratio)
+    if (!ratio || rect.height === 0) return 0
+    const ca = contentArea(ratio, rect.width / rect.height)
     const markerCX = rect.left + (ca.left + ann.x * ca.width) * rect.width
     const markerCY = rect.top + (ca.top + ann.y * ca.height) * rect.height
     return Math.atan2(clientY - markerCY, clientX - markerCX) * 180 / Math.PI
@@ -173,15 +192,15 @@ export function PhotoUpload({
   }
 
   // Normalise a pointer position to [0,1] within the image content area.
-  // imgRef points to the img element which fills the square container (w-full h-full),
-  // so its bounding rect equals the container rect.
+  // imgRef points to the img element which fills the frame (w-full h-full),
+  // so its bounding rect equals the frame's rect.
   function getNormalized(clientX: number, clientY: number) {
     const el = imgRef.current
     if (!el) return null
     const rect = el.getBoundingClientRect()
     const ratio = naturalRatio ?? (el.naturalWidth > 0 ? el.naturalWidth / el.naturalHeight : null)
-    if (!ratio) return null
-    const ca = contentArea(ratio)
+    if (!ratio || rect.height === 0) return null
+    const ca = contentArea(ratio, rect.width / rect.height)
     const offsetX = ca.left * rect.width
     const offsetY = ca.top * rect.height
     const contentW = ca.width * rect.width
@@ -287,7 +306,7 @@ export function PhotoUpload({
   const isResizing = resizingIndex !== null
   const isRotating = rotatingIndex !== null
   // Fall back to full-frame if image hasn't loaded yet
-  const ca = naturalRatio ? contentArea(naturalRatio) : { left: 0, top: 0, width: 1, height: 1 }
+  const ca = naturalRatio ? contentArea(naturalRatio, containerRatio) : { left: 0, top: 0, width: 1, height: 1 }
 
   return (
     <div className="flex flex-col gap-2">
@@ -316,12 +335,16 @@ export function PhotoUpload({
       ) : (
         <>
           {/*
-            Square frame: always as wide as the column, height matches.
-            The img uses object-contain so the full image is visible;
-            letterbox bars show the frame's white background.
+            Frame: intrinsic aspect ratio (matches the photo) on small screens, so a
+            portrait photo uses the full column width and a landscape photo doesn't
+            take up extra height; square frame from the sm breakpoint up. The img uses
+            object-contain, so letterbox bars only appear once the frame is square.
             The frame is the positioning context for the overlay and markers.
           */}
-          <div className="border border-border rounded-xl bg-surface w-full aspect-square relative overflow-hidden">
+          <div
+            className="border border-border rounded-xl bg-surface w-full aspect-[var(--img-ratio)] sm:aspect-square relative overflow-hidden"
+            style={{ '--img-ratio': naturalRatio ?? 1 } as React.CSSProperties}
+          >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               ref={imgRef}
