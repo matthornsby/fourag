@@ -137,15 +137,18 @@ body {
 }
 
 #wallpaper {
-  position: fixed;
+  /* sticky, not fixed: iOS Safari can desync `position: fixed` elements from the
+     visual viewport while its chrome collapses/expands on scroll, leaving a stale
+     gap at an edge until the animation settles. Sticky tracks actual scroll
+     position instead, which doesn't have that desync. The negative margin cancels
+     the space it would otherwise reserve in normal flow (it's the first child of
+     body, before the header/main/footer), so it still reads as a fixed backdrop. */
+  position: sticky;
   top: 0;
   left: 0;
   width: 100lvw;
-  /* dvh (not lvh) so this fixed full-bleed layer always matches the *current*
-     visible viewport as mobile Safari's chrome expands/collapses — lvh is a
-     static "chrome fully collapsed" reference, which left a gap on initial
-     load (chrome expanded) and let content crop after scrolling collapsed it. */
   height: 100dvh;
+  margin-bottom: calc(-1 * 100dvh);
   z-index: -1;
   pointer-events: none;
 
