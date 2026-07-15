@@ -11,7 +11,7 @@ interface CloverMarkerProps {
   dragging?: boolean
   spinning?: boolean
   filled?: boolean
-  onMouseDown?: (e: React.MouseEvent<SVGPathElement>) => void
+  onPointerDown?: (e: React.PointerEvent<SVGPathElement>) => void
 }
 
 export function CloverMarker({
@@ -22,7 +22,7 @@ export function CloverMarker({
   dragging = false,
   spinning = false,
   filled = false,
-  onMouseDown,
+  onPointerDown,
 }: CloverMarkerProps) {
   const groupRef = useRef<SVGGElement>(null)
   const animRef  = useRef<Animation | null>(null)
@@ -105,8 +105,15 @@ export function CloverMarker({
       )}
       <g style={{ transform: `rotate(${rotation}deg)`, transformOrigin: '50% 50%' }}>
         <g ref={groupRef} style={{ transformOrigin: '50% 50%' }}>
-          {/* Hit-test area: transparent fill so only the inside of the clover responds */}
-          <path d={d} fill={filled ? 'var(--color-clover-marker)' : 'transparent'} style={{ pointerEvents: 'fill', cursor: onMouseDown ? 'grab' : 'inherit' }} onMouseDown={onMouseDown} />
+          {/* Hit-test area: transparent fill so only the inside of the clover responds.
+              touch-action: pinch-zoom blocks single-finger panning (so drag isn't hijacked
+              as a scroll) while still letting the browser's native two-finger pinch-zoom through. */}
+          <path
+            d={d}
+            fill={filled ? 'var(--color-clover-marker)' : 'transparent'}
+            style={{ pointerEvents: 'fill', cursor: onPointerDown ? 'grab' : 'inherit', touchAction: 'pinch-zoom' }}
+            onPointerDown={onPointerDown}
+          />
           {!filled && <path d={d} fill="none" stroke="white" strokeWidth="5" strokeLinejoin="round" style={{ pointerEvents: 'none' }} />}
         </g>
       </g>
