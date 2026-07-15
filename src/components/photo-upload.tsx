@@ -22,7 +22,7 @@ function contentArea(naturalRatio: number, containerRatio: number) {
   }
 }
 
-function resizeImage(file: File, maxDimension = 1920, quality = 0.85): Promise<File> {
+function resizeImage(file: File, maxDimension = 1600, quality = 0.7): Promise<File> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file)
     const img = new Image()
