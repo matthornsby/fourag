@@ -96,7 +96,9 @@ export function PhotoUpload({
   const didDragRef = useRef(false)
   const hasDragMovedRef = useRef(false)
   const latestAnnotationsRef = useRef(annotations)
+  const fileDragCounterRef = useRef(0)
   const [preview, setPreview] = useState<string | null>(initialPhotoUrl ?? null)
+  const [isFileDragOver, setIsFileDragOver] = useState(false)
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
   const [resizingIndex, setResizingIndex] = useState<number | null>(null)
   const [rotatingIndex, setRotatingIndex] = useState<number | null>(null)
@@ -153,10 +155,7 @@ export function PhotoUpload({
     return Math.atan2(clientY - markerCY, clientX - markerCX) * 180 / Math.PI
   }
 
-  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-
+  async function processFile(file: File) {
     setPreview(URL.createObjectURL(file))
     setNaturalRatio(null)
 
@@ -182,6 +181,44 @@ export function PhotoUpload({
     }
 
     onChange(uploadFile, exifData)
+  }
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    await processFile(file)
+  }
+
+  // Dragenter/dragleave fire on every child as the pointer moves over them, so a
+  // plain boolean flickers; a counter keeps isFileDragOver true until the pointer
+  // has actually left every nested element.
+  function handleFileDragEnter(e: React.DragEvent<HTMLDivElement>) {
+    if (!e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+    fileDragCounterRef.current += 1
+    setIsFileDragOver(true)
+  }
+
+  function handleFileDragOver(e: React.DragEvent<HTMLDivElement>) {
+    if (!e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+  }
+
+  function handleFileDragLeave(e: React.DragEvent<HTMLDivElement>) {
+    if (!e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+    fileDragCounterRef.current = Math.max(0, fileDragCounterRef.current - 1)
+    if (fileDragCounterRef.current === 0) setIsFileDragOver(false)
+  }
+
+  function handleFileDrop(e: React.DragEvent<HTMLDivElement>) {
+    if (!e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+    fileDragCounterRef.current = 0
+    setIsFileDragOver(false)
+    const file = e.dataTransfer.files?.[0]
+    if (file && file.type.startsWith('image/')) processFile(file)
   }
 
   function handleImgLoad() {
@@ -309,7 +346,13 @@ export function PhotoUpload({
   const ca = naturalRatio ? contentArea(naturalRatio, containerRatio) : { left: 0, top: 0, width: 1, height: 1 }
 
   return (
-    <div className="flex flex-col gap-2">
+    <div
+      className="flex flex-col gap-2"
+      onDragEnter={handleFileDragEnter}
+      onDragOver={handleFileDragOver}
+      onDragLeave={handleFileDragLeave}
+      onDrop={handleFileDrop}
+    >
       <input
         ref={inputRef}
         type="file"
@@ -324,7 +367,9 @@ export function PhotoUpload({
           onClick={() => inputRef.current?.click()}
           className={[
             'flex flex-col items-center justify-center gap-2 w-full rounded-lg border-2 border-dashed py-10',
-            'border-border bg-background text-text-secondary',
+            isFileDragOver
+              ? 'border-accent bg-accent-light text-accent'
+              : 'border-border bg-background text-text-secondary',
             'hover:border-accent hover:text-accent hover:bg-accent-light',
             'transition-colors duration-150 cursor-pointer',
           ].join(' ')}
@@ -342,7 +387,11 @@ export function PhotoUpload({
             The frame is the positioning context for the overlay and markers.
           */}
           <div
-            className="border border-border rounded-xl bg-surface w-full aspect-[var(--img-ratio)] sm:aspect-square relative overflow-hidden"
+            className={[
+              'rounded-xl bg-surface w-full aspect-[var(--img-ratio)] sm:aspect-square relative overflow-hidden',
+              'transition-colors duration-150',
+              isFileDragOver ? 'border-2 border-accent' : 'border border-border',
+            ].join(' ')}
             style={{ '--img-ratio': naturalRatio ?? 1 } as React.CSSProperties}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}

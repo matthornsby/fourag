@@ -14,8 +14,10 @@ export function ProfileForm({ profile }: ProfileFormProps) {
   const [state, action, isPending] = useActionState<ProfileState, FormData>(updateProfile, null)
   const [, startTransition] = useTransition()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const avatarDragCounterRef = useRef(0)
   const [avatarPreview, setAvatarPreview] = useState<string | null>(profile.avatar_url)
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
+  const [isAvatarDragOver, setIsAvatarDragOver] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [isDeleting, startDelete] = useTransition()
@@ -58,11 +60,47 @@ export function ProfileForm({ profile }: ProfileFormProps) {
     })
   }
 
+  function processAvatarFile(file: File) {
+    setAvatarPreview(URL.createObjectURL(file))
+    resizeImage(file, 256).then(setAvatarFile)
+  }
+
   function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
-    setAvatarPreview(URL.createObjectURL(file))
-    resizeImage(file, 256).then(setAvatarFile)
+    processAvatarFile(file)
+  }
+
+  // Dragenter/dragleave fire on every child as the pointer moves over them, so a
+  // plain boolean flickers; a counter keeps isAvatarDragOver true until the pointer
+  // has actually left every nested element.
+  function handleAvatarDragEnter(e: React.DragEvent<HTMLDivElement>) {
+    if (!e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+    avatarDragCounterRef.current += 1
+    setIsAvatarDragOver(true)
+  }
+
+  function handleAvatarDragOver(e: React.DragEvent<HTMLDivElement>) {
+    if (!e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+  }
+
+  function handleAvatarDragLeave(e: React.DragEvent<HTMLDivElement>) {
+    if (!e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+    avatarDragCounterRef.current = Math.max(0, avatarDragCounterRef.current - 1)
+    if (avatarDragCounterRef.current === 0) setIsAvatarDragOver(false)
+  }
+
+  function handleAvatarDrop(e: React.DragEvent<HTMLDivElement>) {
+    if (!e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+    avatarDragCounterRef.current = 0
+    setIsAvatarDragOver(false)
+    const file = e.dataTransfer.files?.[0]
+    if (file && file.type.startsWith('image/')) processAvatarFile(file)
   }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -81,11 +119,21 @@ export function ProfileForm({ profile }: ProfileFormProps) {
       {/* Avatar */}
       <div className="flex flex-col gap-2">
         <span className={labelClass}>Photo</span>
-        <div className="flex items-center gap-4">
+        <div
+          className="flex items-center gap-4"
+          onDragEnter={handleAvatarDragEnter}
+          onDragOver={handleAvatarDragOver}
+          onDragLeave={handleAvatarDragLeave}
+          onDrop={handleAvatarDrop}
+        >
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="relative shrink-0 w-16 h-16 rounded-full overflow-hidden border-2 border-border hover:border-accent transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-accent"
+            className={[
+              'relative shrink-0 w-16 h-16 rounded-full overflow-hidden border-2 transition-colors duration-150',
+              'focus:outline-none focus:ring-2 focus:ring-accent',
+              isAvatarDragOver ? 'border-accent ring-2 ring-accent/40' : 'border-border hover:border-accent',
+            ].join(' ')}
             aria-label="Change profile photo"
           >
             {avatarPreview ? (
@@ -175,21 +223,22 @@ export function ProfileForm({ profile }: ProfileFormProps) {
         </div>
       )}
 
-      <div className="flex items-center gap-3">
-        <button
-          type="submit"
-          disabled={isPending}
-          className="inline-flex items-center rounded-md bg-accent text-contrast text-sm font-medium px-4 py-2 hover:opacity-90 transition-opacity duration-150 disabled:opacity-50"
-        >
-          {isPending ? 'Saving…' : 'Save'}
-        </button>
-        {state && !state.ok && (
-          <p role="alert" className="text-sm text-error">{state.error}</p>
-        )}
-        {state?.ok && (
-          <p className="text-sm text-accent">Saved.</p>
-        )}
-      </div>
+      {state && !state.ok && (
+        <p role="alert" className="text-sm text-error rounded-md bg-red-50 border border-red-200 px-3 py-2">
+          {state.error}
+        </p>
+      )}
+      {state?.ok && (
+        <p className="text-sm text-accent">Saved.</p>
+      )}
+
+      <button
+        type="submit"
+        disabled={isPending}
+        className="w-full button button-primary"
+      >
+        {isPending ? 'Saving…' : 'Save'}
+      </button>
 
     </form>
 

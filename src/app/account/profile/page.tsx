@@ -19,7 +19,7 @@ export default async function ProfilePage() {
 
   return (
     <main className="flex-1 px-4 py-8 sm:px-6">
-      <div className="max-w-[520px] mx-auto">
+      <div className="max-w-[680px] mx-auto">
         <h1 className="text-2xl font-semibold mb-8">Profile</h1>
         <ProfileForm profile={profile as UserProfile} />
       </div>
