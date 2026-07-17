@@ -65,6 +65,7 @@ export default async function Home() {
       username: 'anonymous',
       avatar_url: null,
       bio: 'Finds shared without an account.',
+      profile_url: null,
       trusted: false,
       is_admin: false,
       created_at: '',

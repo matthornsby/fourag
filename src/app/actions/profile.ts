@@ -17,6 +17,12 @@ export async function updateProfile(
     return { ok: false, error: 'You must be signed in.' }
   }
 
+  const { data: existingProfile } = await supabase
+    .from('users')
+    .select('avatar_url, is_admin')
+    .eq('id', user.id)
+    .single()
+
   const bio = (formData.get('bio') as string).trim() || null
   if (bio && bio.length > 200) {
     return { ok: false, error: 'Bio must be 200 characters or fewer.' }
@@ -27,15 +33,29 @@ export async function updateProfile(
     : 'neutral'
   const avatarFile = formData.get('avatarFile') as File | null
 
+  let profileUrl: string | null = null
+  if (existingProfile?.is_admin) {
+    const raw = (formData.get('profileUrl') as string | null)?.trim() || null
+    if (raw) {
+      if (raw.length > 300) {
+        return { ok: false, error: 'URL must be 300 characters or fewer.' }
+      }
+      let parsed: URL
+      try {
+        parsed = new URL(raw)
+      } catch {
+        return { ok: false, error: 'Enter a valid URL, including https://.' }
+      }
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return { ok: false, error: 'URL must start with http:// or https://.' }
+      }
+      profileUrl = parsed.toString()
+    }
+  }
+
   let avatarUrl: string | undefined
 
   if (avatarFile && avatarFile.size > 0) {
-    const { data: existing } = await supabase
-      .from('users')
-      .select('avatar_url')
-      .eq('id', user.id)
-      .single()
-
     const ext = avatarFile.name.split('.').pop() ?? 'jpg'
     const random = Math.random().toString(36).slice(2, 8)
     const storagePath = `${user.id}/${Date.now()}-${random}.${ext}`
@@ -51,9 +71,9 @@ export async function updateProfile(
     const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(storagePath)
     avatarUrl = urlData.publicUrl
 
-    if (existing?.avatar_url) {
+    if (existingProfile?.avatar_url) {
       try {
-        const oldPath = existing.avatar_url.split('/avatars/')[1]
+        const oldPath = existingProfile.avatar_url.split('/avatars/')[1]
         if (oldPath) {
           await supabase.storage.from('avatars').remove([decodeURIComponent(oldPath)])
         }
@@ -63,8 +83,9 @@ export async function updateProfile(
     }
   }
 
-  const updates: { bio: string | null; avatar_url?: string; pronouns: string } = { bio, pronouns }
+  const updates: { bio: string | null; avatar_url?: string; pronouns: string; profile_url?: string | null } = { bio, pronouns }
   if (avatarUrl) updates.avatar_url = avatarUrl
+  if (existingProfile?.is_admin) updates.profile_url = profileUrl
 
   const { error } = await supabase.from('users').update(updates).eq('id', user.id)
   if (error) {

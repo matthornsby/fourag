@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase-server";
 import { FindsCalendar } from "@/components/finds-calendar";
-import { FINDS_TERM } from "@/lib/constants";
+import { FINDS_TERM, SITE_AUTHOR_NAME, SITE_AUTHOR_URL } from "@/lib/constants";
 import { UserAvatar } from "@/components/user-avatar";
 import { computeLuckEndDate } from "@/lib/luck";
 import { luckSentence, cloverProfileSentence } from "@/lib/pronouns";
@@ -43,6 +43,10 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       images: image ? [{ url: image }] : [],
     },
   };
+}
+
+function displayUrl(url: string): string {
+  return url.replace(/^https?:\/\//, "").replace(/\/$/, "");
 }
 
 function pageHeading(username: string, isOwner: boolean): string {
@@ -127,6 +131,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
   const displayName = typedProfile.username.charAt(0).toUpperCase() + typedProfile.username.slice(1);
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
   const profileImage = typedProfile.avatar_url ?? typedFinds[0]?.photo_url;
+  const isSiteAuthor = typedProfile.profile_url === SITE_AUTHOR_URL;
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'ProfilePage',
@@ -134,12 +139,14 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     dateModified: typedFinds[0]?.found_at ?? typedProfile.created_at,
     mainEntity: {
       '@type': 'Person',
-      name: displayName,
+      ...(isSiteAuthor ? { '@id': SITE_AUTHOR_URL } : {}),
+      name: isSiteAuthor ? SITE_AUTHOR_NAME : displayName,
       alternateName: typedProfile.username,
       identifier: typedProfile.username,
       url: `${siteUrl}/${typedProfile.username.toLowerCase()}`,
       ...(profileImage ? { image: profileImage } : {}),
       ...(typedProfile.bio ? { description: typedProfile.bio } : {}),
+      ...(typedProfile.profile_url ? { sameAs: [typedProfile.profile_url] } : {}),
       ...(totalClovers > 0 ? {
         interactionStatistic: {
           '@type': 'InteractionCounter',
@@ -159,6 +166,14 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
         </h1>
         {typedProfile.bio && (
           <p className="text-base sm:text-lg text-text-secondary mb-2">{prettify(typedProfile.bio)}</p>
+        )}
+        {typedProfile.profile_url && (
+          <p className="text-base text-text-secondary">
+            Find this fourager at{' '}
+            <a href={typedProfile.profile_url} target="_blank" rel="me noopener noreferrer" className="text-accent underline underline-offset-2 hover:text-text-primary transition-colors duration-150">
+              {displayUrl(typedProfile.profile_url)}
+            </a>.
+          </p>
         )}
         {totalClovers > 0 && sinceStr && bestCloverFind && bestCloverDateStr && (
           <p className="text-base text-text-secondary">

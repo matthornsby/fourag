@@ -159,6 +159,22 @@ export function ProfileForm({ profile }: ProfileFormProps) {
         />
       </div>
 
+      {/* URL — admin only, for now, to keep it spam-free */}
+      {profile.is_admin && (
+        <div>
+          <label htmlFor="profileUrl" className={labelClass}>URL</label>
+          <input
+            id="profileUrl"
+            name="profileUrl"
+            type="url"
+            maxLength={300}
+            defaultValue={profile.profile_url ?? ''}
+            placeholder="https://example.com"
+            className={inputClass}
+          />
+        </div>
+      )}
+
       <div className="flex items-center gap-3">
         <button
           type="submit"

@@ -8,6 +8,7 @@ import { SiteFooter } from "@/components/site-footer";
 import { HashRedirect } from "@/components/hash-redirect";
 import { createClient } from "@/lib/supabase-server";
 import { PREFS_COOKIE, parsePrefs } from "@/lib/prefs";
+import { SITE_AUTHOR_NAME, SITE_AUTHOR_URL } from "@/lib/constants";
 
 const fraunces = Fraunces({
   variable: "--font-fraunces",
@@ -29,6 +30,21 @@ export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
   title: "Fourag",
   description: "Fourag is a public patch for spreading the serendipity of four-leaf (or even more-leaf) clovers.",
+};
+
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: "Fourag",
+  url: siteUrl,
+  author: {
+    "@type": "Person",
+    "@id": SITE_AUTHOR_URL,
+    name: SITE_AUTHOR_NAME,
+    sameAs: [SITE_AUTHOR_URL],
+  },
 };
 
 // viewport-fit=cover lets full-bleed surfaces (wallpaper, header/footer, maps) reach
@@ -78,6 +94,12 @@ export default async function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} ${fraunces.variable} h-full antialiased`}
     >
       <body suppressHydrationWarning className="min-h-[100dvh] flex flex-col">
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c"),
+          }}
+        />
         <div id="wallpaper" aria-hidden="true" />
         <HashRedirect />
         <SiteHeader user={user && username ? { id: user.id, username, isAdmin, avatarUrl } : null} />

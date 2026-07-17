@@ -33,6 +33,7 @@ export interface UserProfile {
   username: string;
   avatar_url: string | null;
   bio: string | null;
+  profile_url: string | null;
   trusted: boolean;
   is_admin: boolean;
   created_at: string;

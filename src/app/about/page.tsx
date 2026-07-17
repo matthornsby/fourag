@@ -20,7 +20,7 @@ export default function AboutPage() {
   <section>
     <h2>Who?</h2>
     <p>
-      Hi. I'm <a href="https://matthornsby.com" target="_blank">Matt</a>. If you have some clovers to share, <a href="/account/finds/new">please do</a>.
+      Hi. I'm <a href="https://matthornsby.com" target="_blank" rel="me noopener noreferrer">Matt</a>. If you have some clovers to share, <a href="/account/finds/new">please do</a>.
        If you've got some suggestions on how I can make this better, also <a href="mailto:hi@fourag.ing">please do</a>.
     </p>
   </section>
